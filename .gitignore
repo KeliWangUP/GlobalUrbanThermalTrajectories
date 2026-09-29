@@ -1,0 +1,11 @@
+# Ignore large files and backup folders
+data/
+backup/
+results/
+*.log
+*.tmp
+*.csv
+*.tif
+*.nc
+*.h5
+.DS_Store
