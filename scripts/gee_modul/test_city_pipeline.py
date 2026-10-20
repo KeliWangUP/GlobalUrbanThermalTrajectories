@@ -7,6 +7,47 @@ from src.export_utils import (
     load_config
 )
 
+LST_BANDS = [
+    "terra_day",
+    "terra_night",
+    "aqua_day",
+    "aqua_night"
+]
+
+LST_STATISTICS = [
+    "mean",
+    "median",
+    "stdDev",
+    "count"
+]
+
+EXPECTED_LST_FIELDS = {
+    f"{band}_{stat}"
+    for band in LST_BANDS
+    for stat in LST_STATISTICS
+}
+
+EXPECTED_LST_MEAN_FIELDS = {
+    f"{band}_mean"
+    for band in LST_BANDS
+}
+
+QC_BANDS = [
+    "terra_day_clear_days",
+    "terra_day_n8day",
+    "terra_night_clear_days",
+    "terra_night_n8day",
+    "aqua_day_clear_days",
+    "aqua_day_n8day",
+    "aqua_night_clear_days",
+    "aqua_night_n8day"
+]
+
+EXPECTED_QC_FIELDS = {
+    f"{band}_mean"
+    for band in QC_BANDS
+}
+
 
 def main() -> None:
     config = load_config()
@@ -68,33 +109,64 @@ def main() -> None:
             f"Output contains a city ID other than {city_id}."
         )
 
-    mean_fields = [
-        key for key in properties[0]
-        if key.endswith("_mean")
-    ]
-    if not mean_fields:
+    required_fields = EXPECTED_LST_FIELDS | EXPECTED_QC_FIELDS
+    missing_fields_by_month = {
+        row["month"]: required_fields - set(row)
+        for row in properties
+        if required_fields - set(row)
+    }
+    if missing_fields_by_month:
         raise AssertionError(
-            "No mean statistic fields were produced by reduceRegions."
+            "Output is missing expected LST/QC fields by month: "
+            f"{missing_fields_by_month}"
         )
 
     if not any(
         row.get(field) is not None
         for row in properties
-        for field in mean_fields
+        for field in EXPECTED_LST_MEAN_FIELDS
     ):
         raise AssertionError(
             "All monthly mean LST values are null for this city and year."
         )
 
+    invalid_qc_values = []
+    for row in properties:
+        for field in EXPECTED_QC_FIELDS:
+            value = row.get(field)
+            if value is not None and value < 0:
+                invalid_qc_values.append((row["month"], field, value))
+    if invalid_qc_values:
+        raise AssertionError(
+            f"QC summaries contain negative values: {invalid_qc_values}"
+        )
+
+    if not any(
+        row.get(field) is not None and row[field] > 0
+        for row in properties
+        for field in EXPECTED_QC_FIELDS
+    ):
+        raise AssertionError(
+            "No positive QC summary was produced for this city and year."
+        )
+
     print(f"[PASS] One city selected: {city_id}")
     print(f"[PASS] Monthly records: {len(results)}")
-    print(f"[PASS] Mean statistic fields: {', '.join(mean_fields)}")
+    print(f"[PASS] LST fields: {len(EXPECTED_LST_FIELDS)}")
+    print(f"[PASS] QC fields: {len(EXPECTED_QC_FIELDS)}")
     for row in properties:
-        values = ", ".join(
-            f"{field}={row.get(field)}"
-            for field in mean_fields
+        lst_values = ", ".join(
+            f"{band}_mean={row.get(f'{band}_mean')}"
+            for band in LST_BANDS
         )
-        print(f"[RESULT] {row['year']}-{row['month']:02d}: {values}")
+        qc_values = ", ".join(
+            f"{field}={row.get(field)}"
+            for field in sorted(EXPECTED_QC_FIELDS)
+        )
+        print(
+            f"[RESULT] {row['year']}-{row['month']:02d}: "
+            f"{lst_values}; QC: {qc_values}"
+        )
 
 
 if __name__ == "__main__":

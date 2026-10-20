@@ -12,6 +12,38 @@ LST_BANDS = [
     "aqua_night"
 ]
 
+QC_BANDS = [
+    "terra_day_clear_days",
+    "terra_day_n8day",
+    "terra_night_clear_days",
+    "terra_night_n8day",
+    "aqua_day_clear_days",
+    "aqua_day_n8day",
+    "aqua_night_clear_days",
+    "aqua_night_n8day"
+]
+
+
+LST_STATISTICS = [
+    "mean",
+    "median",
+    "stdDev",
+    "count"
+]
+
+
+LST_OUTPUT_FIELDS = [
+    f"{band}_{stat}"
+    for band in LST_BANDS
+    for stat in LST_STATISTICS
+]
+
+
+QC_OUTPUT_FIELDS = [
+    f"{band}_mean"
+    for band in QC_BANDS
+]
+
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config.json"
 
 
@@ -90,6 +122,16 @@ def build_spatial_reducer() -> ee.Reducer:
     )
 
 
+def build_qc_reducer() -> ee.Reducer:
+    """
+    Build the spatial reducer for monthly QC variables.
+
+    QC variables are summarized using the spatial mean only.
+    """
+
+    return ee.Reducer.mean()
+
+
 def reduce_monthly_lst(
     image: ee.Image,
     regions: ee.FeatureCollection,
@@ -100,21 +142,131 @@ def reduce_monthly_lst(
     tile_scale: int,
     id_field: str
 ) -> ee.FeatureCollection:
-    """Calculate monthly regional LST statistics and attach period fields."""
-    regions_clean = regions.select([id_field])
-    
-    result = image.select(LST_BANDS).reduceRegions(
+    """
+    Calculate monthly regional LST statistics and QC summaries.
+
+    LST outputs
+    -----------
+    mean
+    median
+    stdDev
+    count
+
+    QC outputs
+    ----------
+    spatial mean clear-sky observation count
+    spatial mean number of valid A2 composites
+
+    The output schema is normalized so that Terra and Aqua
+    fields always exist, even when a sensor has no observations.
+    """
+
+    # Keep only the unique region identifier.
+    regions_clean = regions.select(
+        [id_field]
+    )
+
+    # --------------------------------------------------
+    # 1. LST spatial statistics
+    # --------------------------------------------------
+
+    lst_stats = (
+        image
+        .select(LST_BANDS)
+        .reduceRegions(
+            collection=regions_clean,
+            reducer=build_spatial_reducer(),
+            crs=projection,
+            scale=scale,
+            tileScale=tile_scale
+        )
+    )
+
+    # --------------------------------------------------
+    # 2. QC spatial statistics
+    # --------------------------------------------------
+    #
+    # Reducer.mean() appends "_mean" to each source band name.
+    qc_stats = image.select(QC_BANDS).reduceRegions(
         collection=regions_clean,
-        reducer=build_spatial_reducer(),
+        reducer=build_qc_reducer(),
         crs=projection,
         scale=scale,
         tileScale=tile_scale
     )
-    return result.map(
-        lambda feature: feature.set({
+
+    # --------------------------------------------------
+    # 3. Join LST and QC using region ID
+    # --------------------------------------------------
+
+    join_filter = ee.Filter.equals(
+        leftField=id_field,
+        rightField=id_field
+    )
+
+    joined = ee.FeatureCollection(
+        ee.Join.saveFirst(
+            matchKey="qc_record"
+        ).apply(
+            primary=lst_stats,
+            secondary=qc_stats,
+            condition=join_filter
+        )
+    )
+
+    # --------------------------------------------------
+    # 4. Normalize output schema
+    # --------------------------------------------------
+
+    def _format_output(feature):
+
+        feature = ee.Feature(feature)
+
+        qc_feature = ee.Feature(
+            feature.get("qc_record")
+        )
+
+        lst_property_names = (
+            feature.propertyNames()
+        )
+
+        qc_property_names = (
+            qc_feature.propertyNames()
+        )
+
+        output = {
+            id_field: feature.get(id_field),
             "year": year,
             "month": month
-        }).setGeometry(None)
+        }
+
+        # Always create all expected LST fields.
+        # Missing Aqua observations become null rather than
+        # causing the fields to disappear from the schema.
+        for field in LST_OUTPUT_FIELDS:
+
+            output[field] = ee.Algorithms.If(
+                lst_property_names.contains(field),
+                feature.get(field),
+                None
+            )
+
+        # Always create all expected QC fields.
+        for field in QC_OUTPUT_FIELDS:
+
+            output[field] = ee.Algorithms.If(
+                qc_property_names.contains(field),
+                qc_feature.get(field),
+                None
+            )
+
+        return ee.Feature(
+            None,
+            output
+        )
+
+    return joined.map(
+        _format_output
     )
 
 
