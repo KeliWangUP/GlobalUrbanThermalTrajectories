@@ -145,30 +145,28 @@ def reduce_monthly_lst(
     """
     Calculate monthly regional LST statistics and QC summaries.
 
-    LST outputs
-    -----------
+    LST statistics
+    --------------
     mean
     median
     stdDev
     count
 
-    QC outputs
-    ----------
-    spatial mean clear-sky observation count
-    spatial mean number of valid A2 composites
-
-    The output schema is normalized so that Terra and Aqua
-    fields always exist, even when a sensor has no observations.
+    QC statistics
+    -------------
+    spatial mean of:
+    - clear-sky observation count
+    - number of valid A2 composites
     """
 
-    # Keep only the unique region identifier.
+    # Keep only the region identifier.
     regions_clean = regions.select(
         [id_field]
     )
 
-    # --------------------------------------------------
-    # 1. LST spatial statistics
-    # --------------------------------------------------
+    # ==================================================
+    # 1. LST statistics
+    # ==================================================
 
     lst_stats = (
         image
@@ -182,83 +180,155 @@ def reduce_monthly_lst(
         )
     )
 
-    # --------------------------------------------------
-    # 2. QC spatial statistics
-    # --------------------------------------------------
-    #
-    # Reducer.mean() appends "_mean" to each source band name.
-    qc_stats = image.select(QC_BANDS).reduceRegions(
-        collection=regions_clean,
-        reducer=build_qc_reducer(),
-        crs=projection,
-        scale=scale,
-        tileScale=tile_scale
-    )
+    # ==================================================
+    # 2. QC statistics
+    # ==================================================
 
-    # --------------------------------------------------
-    # 3. Join LST and QC using region ID
-    # --------------------------------------------------
-
-    join_filter = ee.Filter.equals(
-        leftField=id_field,
-        rightField=id_field
-    )
-
-    joined = ee.FeatureCollection(
-        ee.Join.saveFirst(
-            matchKey="qc_record"
-        ).apply(
-            primary=lst_stats,
-            secondary=qc_stats,
-            condition=join_filter
+    qc_stats = (
+        image
+        .select(QC_BANDS)
+        .reduceRegions(
+            collection=regions_clean,
+            reducer=build_qc_reducer(),
+            crs=projection,
+            scale=scale,
+            tileScale=tile_scale
         )
     )
 
-    # --------------------------------------------------
-    # 4. Normalize output schema
-    # --------------------------------------------------
+    # With ee.Reducer.mean() alone, Earth Engine generally
+    # preserves the input band name as the output property.
+    #
+    # Therefore:
+    # terra_day_clear_days
+    # becomes:
+    # terra_day_clear_days
+    #
+    # We explicitly rename the properties later to *_mean.
 
-    def _format_output(feature):
+    # ==================================================
+    # 3. Join by city ID
+    # ==================================================
+
+    joined = ee.Join.saveFirst(
+        matchKey="qc"
+    ).apply(
+        primary=lst_stats,
+        secondary=qc_stats,
+        condition=ee.Filter.equals(
+            leftField=id_field,
+            rightField=id_field
+        )
+    )
+
+    joined = ee.FeatureCollection(joined)
+
+    # ==================================================
+    # 4. Construct clean output
+    # ==================================================
+
+    def _format_feature(feature):
 
         feature = ee.Feature(feature)
 
-        qc_feature = ee.Feature(
-            feature.get("qc_record")
+        qc = ee.Feature(
+            feature.get("qc")
         )
 
-        lst_property_names = (
-            feature.propertyNames()
-        )
-
-        qc_property_names = (
-            qc_feature.propertyNames()
-        )
-
-        output = {
+        output = ee.Dictionary({
             id_field: feature.get(id_field),
+
             "year": year,
-            "month": month
-        }
+            "month": month,
 
-        # Always create all expected LST fields.
-        # Missing Aqua observations become null rather than
-        # causing the fields to disappear from the schema.
-        for field in LST_OUTPUT_FIELDS:
+            # ------------------------------
+            # Terra daytime
+            # ------------------------------
 
-            output[field] = ee.Algorithms.If(
-                lst_property_names.contains(field),
-                feature.get(field),
-                None
-            )
+            "terra_day_mean":
+                feature.get("terra_day_mean"),
 
-        # Always create all expected QC fields.
-        for field in QC_OUTPUT_FIELDS:
+            "terra_day_median":
+                feature.get("terra_day_median"),
 
-            output[field] = ee.Algorithms.If(
-                qc_property_names.contains(field),
-                qc_feature.get(field),
-                None
-            )
+            "terra_day_stdDev":
+                feature.get("terra_day_stdDev"),
+
+            "terra_day_count":
+                feature.get("terra_day_count"),
+
+            "terra_day_clear_days_mean":
+                qc.get("terra_day_clear_days"),
+
+            "terra_day_n8day_mean":
+                qc.get("terra_day_n8day"),
+
+            # ------------------------------
+            # Terra nighttime
+            # ------------------------------
+
+            "terra_night_mean":
+                feature.get("terra_night_mean"),
+
+            "terra_night_median":
+                feature.get("terra_night_median"),
+
+            "terra_night_stdDev":
+                feature.get("terra_night_stdDev"),
+
+            "terra_night_count":
+                feature.get("terra_night_count"),
+
+            "terra_night_clear_days_mean":
+                qc.get("terra_night_clear_days"),
+
+            "terra_night_n8day_mean":
+                qc.get("terra_night_n8day"),
+
+            # ------------------------------
+            # Aqua daytime
+            # ------------------------------
+
+            "aqua_day_mean":
+                feature.get("aqua_day_mean"),
+
+            "aqua_day_median":
+                feature.get("aqua_day_median"),
+
+            "aqua_day_stdDev":
+                feature.get("aqua_day_stdDev"),
+
+            "aqua_day_count":
+                feature.get("aqua_day_count"),
+
+            "aqua_day_clear_days_mean":
+                qc.get("aqua_day_clear_days"),
+
+            "aqua_day_n8day_mean":
+                qc.get("aqua_day_n8day"),
+
+            # ------------------------------
+            # Aqua nighttime
+            # ------------------------------
+
+            "aqua_night_mean":
+                feature.get("aqua_night_mean"),
+
+            "aqua_night_median":
+                feature.get("aqua_night_median"),
+
+            "aqua_night_stdDev":
+                feature.get("aqua_night_stdDev"),
+
+            "aqua_night_count":
+                feature.get("aqua_night_count"),
+
+            "aqua_night_clear_days_mean":
+                qc.get("aqua_night_clear_days"),
+
+            "aqua_night_n8day_mean":
+                qc.get("aqua_night_n8day")
+        })
 
         return ee.Feature(
             None,
@@ -266,7 +336,7 @@ def reduce_monthly_lst(
         )
 
     return joined.map(
-        _format_output
+        _format_feature
     )
 
 
