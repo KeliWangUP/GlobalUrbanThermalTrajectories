@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any
 
 import ee
-
+from src.modis_lst_utils import build_monthly_four_slot_image
 
 LST_BANDS = [
     "terra_day",
@@ -47,19 +47,18 @@ def initialize_gee(config: dict[str, Any]) -> None:
 def get_modis_reference_grid(
     config: dict[str, Any]
 ) -> tuple[ee.Projection, float]:
-    """Get the reference MODIS projection and native pixel scale."""
+    """Get the native MODIS projection and nominal pixel scale."""
+
     grid_config = config["reference_grid"]
+
     reference = (
         ee.ImageCollection(grid_config["collection"])
-        .filterDate(
-            grid_config["reference_date"],
-            ee.Date(grid_config["reference_date"]).advance(1, "day")
-        )
+        .select(grid_config["band"])
         .first()
     )
-    projection = ee.Image(reference).select(
-        grid_config["band"]
-    ).projection()
+
+    projection = ee.Image(reference).projection()
+
     projection_info = projection.getInfo()
     native_scale = projection.nominalScale().getInfo()
 
@@ -68,6 +67,7 @@ def get_modis_reference_grid(
     print(f"[INFO] Band: {grid_config['band']}")
     print(f"[INFO] CRS: {projection_info['crs']}")
     print(f"[INFO] Native scale: {native_scale:.3f} m")
+
     return projection, native_scale
 
 
@@ -97,11 +97,14 @@ def reduce_monthly_lst(
     month: int,
     projection: ee.Projection,
     scale: float,
-    tile_scale: int
+    tile_scale: int,
+    id_field: str
 ) -> ee.FeatureCollection:
     """Calculate monthly regional LST statistics and attach period fields."""
+    regions_clean = regions.select([id_field])
+    
     result = image.select(LST_BANDS).reduceRegions(
-        collection=regions,
+        collection=regions_clean,
         reducer=build_spatial_reducer(),
         crs=projection,
         scale=scale,
@@ -142,10 +145,10 @@ def build_yearly_lst_statistics(
     projection: ee.Projection,
     scale: float,
     tile_scale: int,
+    id_field: str,
     spatial_mask: ee.Image | None = None
 ) -> ee.FeatureCollection:
     """Build and combine the twelve monthly regional LST summaries."""
-    from src.modis_lst_utils import build_monthly_four_slot_image
 
     monthly_results = []
     for month in range(1, 13):
@@ -166,9 +169,11 @@ def build_yearly_lst_statistics(
                 month=month,
                 projection=projection,
                 scale=scale,
-                tile_scale=tile_scale
+                tile_scale=tile_scale,
+                id_field=id_field
             )
         )
+        print(f"[BUILD] {year}-{month:02d}")
 
     return ee.FeatureCollection(monthly_results).flatten()
 
@@ -180,17 +185,23 @@ def run_annual_exports(
     projection: ee.Projection,
     scale: float,
     spatial_mask: ee.Image | None = None
-) -> None:
+) -> list[ee.batch.Task]:
     """Submit one annual CSV export for each configured study year."""
+
     study_config = config["study"]
     tile_scale = config["processing"]["tile_scale"]
     export_config = config["export"]
+    id_field = config["cities"]["id_field"]
+    version = config["project"]["version"]
+
+    tasks = []
 
     for year in range(
         study_config["start_year"],
         study_config["end_year"] + 1
     ):
-        print(f"[INFO] Building {dataset_name}: {year}")
+        print(f"\n[INFO] Building {dataset_name}: {year}")
+
         annual_collection = build_yearly_lst_statistics(
             year=year,
             regions=regions,
@@ -198,11 +209,19 @@ def run_annual_exports(
             projection=projection,
             scale=scale,
             tile_scale=tile_scale,
+            id_field=id_field,
             spatial_mask=spatial_mask
         )
-        export_table_to_drive(
+
+        task = export_table_to_drive(
             collection=annual_collection,
-            description=f"{dataset_name}_{year}",
+            description=f"{dataset_name}_{version}_{year}",
             folder=export_config["folder"],
-            file_name=f"{dataset_name}_{year}"
+            file_name=f"{dataset_name}_{version}_{year}"
         )
+
+        tasks.append(task)
+
+    print(f"[INFO] Submitted {len(tasks)} export tasks.")
+
+    return tasks

@@ -54,17 +54,18 @@ def build_all_rural_halos(
 def build_global_urban_exclusion_mask(
     cities: ee.FeatureCollection,
     buffer_m: int,
-    max_error_m: int
+    max_error_m: int,
+    reference_projection: ee.Projection
 ) -> ee.Image:
     """
-    Create a global urban exclusion zone.
+    Create a global exclusion mask around all study cities.
 
-    Pixels inside any city or within buffer_m of any city
-    are marked as excluded.
+    1 = excluded
+    0 = potentially available
     """
 
     buffered = cities.map(
-        lambda f: f.buffer(
+        lambda feature: feature.buffer(
             buffer_m,
             max_error_m
         )
@@ -75,6 +76,9 @@ def build_global_urban_exclusion_mask(
         .byte()
         .paint(buffered, 1)
         .rename("urban_exclusion")
+        .setDefaultProjection(
+            reference_projection
+        )
     )
 
     return exclusion
@@ -83,65 +87,108 @@ def build_global_stable_rural_binary(
     urban_mask_source: ee.Image,
     dem_mask_source: ee.ImageCollection,
     global_exclusion_mask: ee.Image,
-    max_slope_deg: float,
-    source_scale_m: int
+    max_slope_deg: float
 ) -> ee.Image:
     """
-    Create an unmasked binary rural eligibility image.
+    Create a fine-resolution binary rural eligibility image.
 
-    1 = valid stable rural land
+    1 = valid rural land
     0 = unsuitable land
 
-    Important:
-    The zero values must be retained before aggregation to MODIS scale.
+    Criteria
+    --------
+    - Not impervious according to GAIA
+    - Slope below threshold
+    - Not water
+    - Outside all city exclusion buffers
+
+    Notes
+    -----
+    The binary image remains unmasked before MODIS aggregation
+    so that unsuitable pixels contribute zeros to the rural fraction.
     """
 
+    # --------------------------------------------------
+    # GAIA
+    # --------------------------------------------------
+
+    gaia = urban_mask_source.select(
+        "change_year_index"
+    )
+
+    # GAIA transition pixels have values 1-34.
+    # Masked/non-transition pixels are converted to zero.
+    gaia_filled = gaia.unmask(0)
+
+    stable_nonurban = (
+        gaia_filled
+        .eq(0)
+        .rename("stable_nonurban")
+    )
+
+    # --------------------------------------------------
     # DEM
+    # --------------------------------------------------
+
+    first_dem = ee.Image(
+        dem_mask_source.first()
+    )
+
+    dem_projection = (
+        first_dem
+        .select("DEM")
+        .projection()
+    )
+
     dem = (
         dem_mask_source
         .select("DEM")
         .mosaic()
-    )
-
-    dem = dem.setDefaultProjection(
-        crs="EPSG:4326",
-        scale=source_scale_m
+        .setDefaultProjection(
+            dem_projection
+        )
     )
 
     slope = ee.Terrain.slope(dem)
 
-    slope_ok = slope.lt(max_slope_deg)
+    slope_ok = (
+        slope
+        .lt(max_slope_deg)
+        .rename("slope_ok")
+    )
 
-    # Water mask
+    # --------------------------------------------------
+    # Water
+    # --------------------------------------------------
+
     water = (
         dem_mask_source
         .select("WBM")
         .mosaic()
         .setDefaultProjection(
-            crs="EPSG:4326",
-            scale=source_scale_m
+            dem_projection
         )
     )
 
-    non_water = water.eq(0)
-
-    # GAIA stable non-urban
-    gaia = urban_mask_source.select(
-        "change_year_index"
+    non_water = (
+        water
+        .eq(0)
+        .rename("non_water")
     )
 
-    gaia_filled = (
-        gaia
-        .updateMask(gaia)
-        .unmask(0)
-    )
+    # --------------------------------------------------
+    # City exclusion
+    # --------------------------------------------------
 
-    stable_nonurban = gaia_filled.eq(0)
-
-    # Outside all city + 2 km exclusion zones
     outside_city_influence = (
-        global_exclusion_mask.eq(0)
+        global_exclusion_mask
+        .eq(0)
+        .rename("outside_city")
     )
+
+    # --------------------------------------------------
+    # Final binary mask
+    # --------------------------------------------------
 
     rural_binary = (
         stable_nonurban

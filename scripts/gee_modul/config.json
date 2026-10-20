@@ -19,6 +19,11 @@
     "tile_scale": 4
   },
 
+  "test": {
+    "city_id": 5249,
+    "year": 2020
+  },
+
   "reference_grid": {
     "collection": "MODIS/061/MOD11A1",
     "band": "LST_Day_1km",
@@ -84,7 +89,6 @@
     "gaia_asset": "Tsinghua/FROM-GLC/GAIA/v10",
     "dem_collection": "COPERNICUS/DEM/GLO30",
 
-    "rural_mask_scale_m": 100,
     "minimum_rural_fraction_per_modis_pixel": 0.8
   },
 

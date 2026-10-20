@@ -27,13 +27,24 @@ def build_rural_inputs(
         city_id_field=city_config["id_field"],
         max_error_m=rural_config["max_error_m"]
     )
+
+    urban_mask_source = ee.Image(rural_config["gaia_asset"])
+
+    gaia_projection = (
+        urban_mask_source
+        .select("change_year_index")
+        .projection()
+    )
+
     urban_exclusion = build_global_urban_exclusion_mask(
         cities=cities,
         buffer_m=rural_config["inner_buffer_m"],
-        max_error_m=rural_config["max_error_m"]
+        max_error_m=rural_config["max_error_m"],
+        reference_projection=gaia_projection
     )
+    
     rural_binary = build_global_stable_rural_binary(
-        urban_mask_source=ee.Image(rural_config["gaia_asset"]),
+        urban_mask_source=urban_mask_source,
         dem_mask_source=ee.ImageCollection(rural_config["dem_collection"]),
         global_exclusion_mask=urban_exclusion,
         max_slope_deg=rural_config["max_slope_deg"],
