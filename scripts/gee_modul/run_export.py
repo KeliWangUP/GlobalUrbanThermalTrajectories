@@ -1,39 +1,39 @@
-def run_annual_exports(
-    dataset_name: str,
-    regions: ee.FeatureCollection,
-    config: dict,
-    projection: ee.Projection,
-    scale: ee.Number,
-    spatial_mask: ee.Image | None = None
-):
-    """
-    Submit annual GEE export tasks.
-    """
+from src.export_utils import (
+    get_modis_reference_grid,
+    initialize_gee,
+    load_config
+)
+from export_city_monthly_lst import export_city
+from export_rural_monthly_lst import export_rural
 
-    for year in range(
-        config["study"]["start_year"],
-        config["study"]["end_year"] + 1
-    ):
 
-        print(
-            f"[INFO] Building "
-            f"{dataset_name}: {year}"
+EXPORTERS = {
+    "city": export_city,
+    "rural": export_rural
+}
+
+
+def main() -> None:
+    config = load_config()
+    targets = config["export"]["targets"]
+    unknown_targets = set(targets) - EXPORTERS.keys()
+    if unknown_targets:
+        raise ValueError(
+            f"Unsupported export targets in config: "
+            f"{', '.join(sorted(unknown_targets))}"
         )
+    if not targets:
+        raise ValueError("Config must specify at least one export target.")
+    if len(targets) != len(set(targets)):
+        raise ValueError("Config export targets must not contain duplicates.")
 
-        annual_fc = (
-            build_yearly_lst_statistics(
-                year=year,
-                regions=regions,
-                config=config,
-                projection=projection,
-                scale=scale,
-                spatial_mask=spatial_mask
-            )
-        )
+    initialize_gee(config)
+    projection, scale = get_modis_reference_grid(config)
 
-        export_table_to_drive(
-            collection=annual_fc,
-            description=f"{dataset_name}_{year}",
-            folder=config["export"]["folder"],
-            file_name=f"{dataset_name}_{year}"
-        )
+    for target in targets:
+        print(f"[INFO] Starting {target} exports.")
+        EXPORTERS[target](config, projection, scale)
+
+
+if __name__ == "__main__":
+    main()

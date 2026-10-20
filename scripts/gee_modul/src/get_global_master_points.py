@@ -1,103 +1,5 @@
-import json
-from pathlib import Path
-
 import ee
-
-
-def load_config(config_path: str) -> dict:
-    """
-    Load project configuration from JSON.
-
-    Parameters
-    ----------
-    config_path : str
-        Path to the JSON configuration file.
-
-    Returns
-    -------
-    dict
-        Parsed configuration dictionary.
-    """
-    path = Path(config_path)
-
-    if not path.exists():
-        raise FileNotFoundError(f"Config file not found: {path}")
-
-    with path.open("r", encoding="utf-8") as f:
-        config = json.load(f)
-
-    print(f"[INFO] Config loaded from: {path}")
-    print(f"[INFO] Config version: {config['project']['version']}")
-
-    return config
-
-def initialize_gee(project_id: str) -> None:
-    """
-    Initialize Google Earth Engine.
-
-    Parameters
-    ----------
-    project_id : str
-        Google Cloud project used by Earth Engine.
-    """
-    try:
-        ee.Initialize(project=project_id)
-        print(f"[INFO] Earth Engine initialized.")
-        print(f"[INFO] GEE project: {project_id}")
-
-    except Exception as exc:
-        print("[ERROR] Earth Engine initialization failed.")
-        print(f"[ERROR] {exc}")
-        raise
-
-def get_modis_reference_grid(
-    collection_id: str,
-    band_name: str,
-    reference_date: str
-):
-    """
-    Retrieve the native MODIS projection used as the reference grid.
-
-    Parameters
-    ----------
-    collection_id : str
-        Earth Engine MODIS ImageCollection ID.
-    band_name : str
-        Reference MODIS band.
-    reference_date : str
-        Date used to retrieve one reference image.
-
-    Returns
-    -------
-    tuple
-        reference_image, projection, native_scale
-    """
-
-    reference_image = (
-        ee.ImageCollection(collection_id)
-        .filterDate(
-            reference_date,
-            ee.Date(reference_date).advance(1, "day")
-        )
-        .first()
-    )
-
-    reference_image = ee.Image(reference_image).select(band_name)
-
-    projection = reference_image.projection()
-
-    # One client-side request is acceptable here because
-    # the projection metadata is small and only retrieved once.
-    projection_info = projection.getInfo()
-    native_scale = projection.nominalScale().getInfo()
-
-    print("[INFO] MODIS reference grid loaded.")
-    print(f"[INFO] Collection: {collection_id}")
-    print(f"[INFO] Band: {band_name}")
-    print(f"[INFO] CRS: {projection_info['crs']}")
-    print(f"[INFO] Native scale: {native_scale:.3f} m")
-
-    return reference_image, projection, native_scale
+from src.export_utils import get_modis_reference_grid, initialize_gee, load_config
 
 def build_modis_coordinate_image(
     projection: ee.Projection,
@@ -142,7 +44,7 @@ def create_candidate_sample_points(
     projection: ee.Projection,
     native_scale: float,
     city_id_field: str,
-    tile_scale: int = 4
+    tile_scale: int
 ) -> ee.FeatureCollection:
     """
     Generate MODIS pixel-center sample points within city boundaries.
@@ -242,7 +144,7 @@ def build_modis_city_sample_points(config: dict):
     """
 
     grid_cfg = config["reference_grid"]
-    city_cfg = config["city_bounds"]
+    city_cfg = config["cities"]
     point_cfg = config["sample_points"]
 
     print("[INFO] Starting MODIS sample-point generation.")
@@ -259,11 +161,7 @@ def build_modis_city_sample_points(config: dict):
     # Get reference MODIS projection
     # --------------------------------------------------
 
-    _, modis_proj, native_scale = get_modis_reference_grid(
-        collection_id=grid_cfg["collection"],
-        band_name=grid_cfg["band"],
-        reference_date=grid_cfg["reference_date"]
-    )
+    modis_proj, native_scale = get_modis_reference_grid(config)
 
     # --------------------------------------------------
     # Build coordinate raster
@@ -283,8 +181,8 @@ def build_modis_city_sample_points(config: dict):
         city_bounds=cities,
         projection=modis_proj,
         native_scale=native_scale,
-        city_id_field=city_cfg["city_id_field"],
-        tile_scale=point_cfg["tile_scale"]
+        city_id_field=city_cfg["id_field"],
+        tile_scale=config["processing"]["tile_scale"]
     )
 
     # --------------------------------------------------
@@ -300,23 +198,13 @@ def build_modis_city_sample_points(config: dict):
 
     return points
 
-"""Use the functions to get the MODIS reference grid and build the MODIS reference city sample points."""
-
-config = load_config("config.json")
-
-initialize_gee(
-    project_id=config["project"]["gee_project"]
-)
-
-points = build_modis_city_sample_points(config)
-
 """Single city sample-point extraction example."""
 
 # city_id = 5249
 
 # munich_points = points.filter(
 #     ee.Filter.eq(
-#         config["city_bounds"]["city_id_field"],
+#         config["cities"]["id_field"],
 #         city_id
 #     )
 # )
@@ -453,7 +341,8 @@ points = build_modis_city_sample_points(config)
 
 def prepare_sample_points_for_export(
     points: ee.FeatureCollection,
-    city_id_field: str = "ID_UC_G0"
+    city_id_field: str,
+    include_lonlat: bool
 ) -> ee.FeatureCollection:
     """
     Keep only the fields required by the permanent MODIS reference-point asset.
@@ -472,14 +361,9 @@ def prepare_sample_points_for_export(
         Cleaned reference-point collection.
     """
 
-    required_fields = [
-        "pixel_id",
-        city_id_field,
-        "modis_x",
-        "modis_y",
-        "lon",
-        "lat"
-    ]
+    required_fields = ["pixel_id", city_id_field, "modis_x", "modis_y"]
+    if include_lonlat:
+        required_fields.extend(["lon", "lat"])
 
     cleaned = points.select(
         propertySelectors=required_fields,
@@ -571,13 +455,23 @@ def export_sample_points_to_asset(
 
     return task
 
-export_points = prepare_sample_points_for_export(points)
+def main() -> None:
+    config = load_config()
+    initialize_gee(config)
+    points = build_modis_city_sample_points(config)
+    export_config = config["export"]
+    export_points = prepare_sample_points_for_export(
+        points=points,
+        city_id_field=config["cities"]["id_field"],
+        include_lonlat=config["sample_points"]["include_lonlat"]
+    )
+    export_sample_points_to_asset(
+        points=export_points,
+        output_asset=export_config["asset_root"],
+        description=export_config["sample_points_description"],
+        overwrite=export_config["overwrite_sample_points"]
+    )
 
-OUTPUT_ASSET = config["export"]["asset_root"]
 
-task = export_sample_points_to_asset(
-    points=export_points,
-    output_asset=OUTPUT_ASSET,
-    description="modis_sample_points",
-    overwrite=False
-)
+if __name__ == "__main__":
+    main()
