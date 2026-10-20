@@ -1,0 +1,92 @@
+{
+  "project": {
+    "gee_project": "ee-keliwang",
+    "version": "v0.1"
+  },
+
+  "study": {
+    "start_year": 2000,
+    "end_year": 2020
+  },
+
+  "sample_points": {
+    "selection_rule": "center_in_city",
+    "include_lonlat": true,
+    "tile_scale": 4,
+    "city_batch_size": 50
+  },
+
+  "reference_grid": {
+    "collection": "MODIS/061/MOD11A1",
+    "band": "LST_Day_1km",
+    "reference_date": "2001-01-01",
+    "pixel_id_prefix": "MODIS"
+  },
+
+  "cities": {
+    "asset": "users/keliwang/urban_expansion/GHSL_urban_bounds_2024",
+    "id_field": "ID_UC_G0",
+    "boundary_definition": "fixed_2024"
+  },
+
+  "modis": {
+    "scale_factor": 0.02,
+    "kelvin_offset": -273.15,
+
+    "monthly_assignment": "composite_midpoint",
+    "monthly_weighting": "clear_sky_count",
+
+    "qa": {
+      "mandatory_qa_max": 1,
+      "max_lst_error_code": 1
+    },
+
+    "slots": {
+      "terra_day": {
+        "collection": "MODIS/061/MOD11A2",
+        "lst_band": "LST_Day_1km",
+        "qc_band": "QC_Day",
+        "clear_band": "Clear_sky_days"
+      },
+
+      "terra_night": {
+        "collection": "MODIS/061/MOD11A2",
+        "lst_band": "LST_Night_1km",
+        "qc_band": "QC_Night",
+        "clear_band": "Clear_sky_nights"
+      },
+
+      "aqua_day": {
+        "collection": "MODIS/061/MYD11A2",
+        "lst_band": "LST_Day_1km",
+        "qc_band": "QC_Day",
+        "clear_band": "Clear_sky_days"
+      },
+
+      "aqua_night": {
+        "collection": "MODIS/061/MYD11A2",
+        "lst_band": "LST_Night_1km",
+        "qc_band": "QC_Night",
+        "clear_band": "Clear_sky_nights"
+      }
+    }
+  },
+
+  "rural": {
+    "inner_buffer_m": 2000,
+    "outer_buffer_m": 10000,
+    "max_slope_deg": 5,
+
+    "gaia_asset": "Tsinghua/FROM-GLC/GAIA/v10",
+    "dem_collection": "COPERNICUS/DEM/GLO30",
+
+    "rural_mask_scale_m": 100,
+    "minimum_rural_fraction_per_modis_pixel": 0.8
+  },
+
+  "export": {
+    "asset_root": "projects/ee-keliwangpy/assets/GlobalUrbanThermalTrajectories/modis_sample_points",
+    "folder": "GlobalUrbanThermalTrajectories",
+    "partition": "year"
+  }
+}

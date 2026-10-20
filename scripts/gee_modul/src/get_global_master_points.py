@@ -448,6 +448,9 @@ points = build_modis_city_sample_points(config)
 #     city_id_field="ID_UC_G0"
 # )
 
+
+"""Export MODIS sample points to Earth Engine asset."""
+
 def prepare_sample_points_for_export(
     points: ee.FeatureCollection,
     city_id_field: str = "ID_UC_G0"
