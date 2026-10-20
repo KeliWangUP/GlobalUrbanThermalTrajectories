@@ -13,15 +13,22 @@ from src.rural_reference_utils import (
 
 def build_rural_inputs(
     config: dict[str, Any],
-    projection: ee.Projection
+    projection: ee.Projection,
+    city_id: int | None = None
 ) -> tuple[ee.FeatureCollection, ee.Image]:
     """Build rural halo regions and the MODIS-grid rural suitability mask."""
     city_config = config["cities"]
     rural_config = config["rural"]
     cities = ee.FeatureCollection(city_config["asset"])
 
+    halo_cities = cities
+    if city_id is not None:
+        halo_cities = cities.filter(
+            ee.Filter.eq(city_config["id_field"], city_id)
+        )
+
     rural_halos = build_all_rural_halos(
-        cities=cities,
+        cities=halo_cities,
         inner_buffer_m=rural_config["inner_buffer_m"],
         outer_buffer_m=rural_config["outer_buffer_m"],
         city_id_field=city_config["id_field"],
