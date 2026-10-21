@@ -374,8 +374,10 @@ def get_rural_modis_tile_ids(
                 )
             )
 
-    coverage = rural_halos.geometry(
-        maxError=max_error_m
+    coverage = _rural_coverage_in_projection(
+        rural_halos,
+        max_error_m,
+        projection_crs
     )
     intersecting_ids = (
         ee.FeatureCollection(tile_features)
@@ -388,6 +390,21 @@ def get_rural_modis_tile_ids(
             "No MODIS tiles intersect the configured rural coverage."
         )
     return sorted(intersecting_ids)
+
+
+def _rural_coverage_in_projection(
+    rural_halos: ee.FeatureCollection,
+    max_error_m: int,
+    projection_crs: str
+) -> ee.Geometry:
+    return (
+        rural_halos
+        .geometry(maxError=max_error_m)
+        .transform(
+            proj=projection_crs,
+            maxError=max_error_m
+        )
+    )
 
 
 def get_rural_modis_chunk_ids(
@@ -461,8 +478,10 @@ def get_rural_modis_chunk_ids(
             )
         )
 
-    coverage = rural_halos.geometry(
-        maxError=max_error_m
+    coverage = _rural_coverage_in_projection(
+        rural_halos,
+        max_error_m,
+        projection_crs
     )
     intersecting_ids = (
         ee.FeatureCollection(chunk_features)
