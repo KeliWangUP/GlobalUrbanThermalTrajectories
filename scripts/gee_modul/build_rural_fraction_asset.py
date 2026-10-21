@@ -144,6 +144,13 @@ def main() -> None:
         )
         return
 
+    max_exports = rural_config["max_chunk_exports_per_run"]
+    if max_exports < 1:
+        raise ValueError(
+            "max_chunk_exports_per_run must be a positive integer."
+        )
+    batch_chunk_ids = pending_chunk_ids[:max_exports]
+
     rural_fraction = build_rural_fraction_image(
         cities=cities,
         urban_mask_source=ee.Image(rural_config["gaia_asset"]),
@@ -162,9 +169,12 @@ def main() -> None:
 
     print(
         f"[INFO] Rural MODIS chunks intersecting coverage: "
-        f"{len(chunk_ids)}; new chunk exports: {len(pending_chunk_ids)}."
+        f"{len(chunk_ids)}; pending exports: {len(pending_chunk_ids)}; "
+        f"submitting this run: {len(batch_chunk_ids)}; "
+        f"remaining after this batch: "
+        f"{len(pending_chunk_ids) - len(batch_chunk_ids)}."
     )
-    for chunk_id in pending_chunk_ids:
+    for chunk_id in batch_chunk_ids:
         chunk_region, transform = get_modis_chunk_export_grid(
             chunk_id=chunk_id,
             projection_crs=projection_info["crs"],
@@ -191,8 +201,9 @@ def main() -> None:
         print(f"[TASK] {task.id}")
 
     print(
-        "[NEXT] Wait for all chunk tasks to complete, then run "
-        "build_rural_halos_asset.py."
+        "[NEXT] Wait for every task in this batch to complete, then rerun "
+        "build_rural_fraction_asset.py to submit the next batch. After all "
+        "fraction chunks exist, run build_rural_halos_asset.py."
     )
 
 

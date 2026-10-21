@@ -101,6 +101,7 @@
 
     "minimum_rural_fraction_per_modis_pixel": 0.8,
     "max_input_pixels_per_modis_pixel": 32768,
+    "max_chunk_exports_per_run": 10,
 
     "static_assets": {
       "fraction_collection_asset": "projects/ee-keliwangpy/assets/GlobalUrbanThermalTrajectories/rural_fraction_modis_fixed2024_v0_1",
