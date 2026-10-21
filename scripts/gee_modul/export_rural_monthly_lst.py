@@ -3,65 +3,54 @@ from typing import Any
 import ee
 
 from src.export_utils import run_annual_exports
-from src.rural_reference_utils import (
-    aggregate_rural_mask_to_modis,
-    build_all_rural_halos,
-    build_global_stable_rural_binary,
-    build_global_urban_exclusion_mask
-)
 
 
-def build_rural_inputs(
+def load_rural_inputs(
     config: dict[str, Any],
-    projection: ee.Projection,
     city_id: int | None = None
 ) -> tuple[ee.FeatureCollection, ee.Image]:
-    """Build rural halo regions and the MODIS-grid rural suitability mask."""
-    city_config = config["cities"]
+    """Load the persistent rural assets used by temporal MODIS processing."""
     rural_config = config["rural"]
-    cities = ee.FeatureCollection(city_config["asset"])
+    static_assets = rural_config["static_assets"]
+    id_field = config["cities"]["id_field"]
 
-    halo_cities = cities
-    if city_id is not None:
-        halo_cities = cities.filter(
-            ee.Filter.eq(city_config["id_field"], city_id)
+    fraction = ee.Image(
+        static_assets["fraction_asset"]
+    )
+    band_names = fraction.bandNames().getInfo()
+    if "rural_fraction" not in band_names:
+        raise ValueError(
+            "Rural fraction asset is missing the 'rural_fraction' band: "
+            f"{static_assets['fraction_asset']}"
         )
 
-    rural_halos = build_all_rural_halos(
-        cities=halo_cities,
-        inner_buffer_m=rural_config["inner_buffer_m"],
-        outer_buffer_m=rural_config["outer_buffer_m"],
-        city_id_field=city_config["id_field"],
-        max_error_m=rural_config["max_error_m"]
+    rural_halos = ee.FeatureCollection(
+        static_assets["halos_asset"]
     )
+    if city_id is not None:
+        rural_halos = rural_halos.filter(
+            ee.Filter.eq(id_field, city_id)
+        )
+    if rural_halos.size().getInfo() == 0:
+        if city_id is None:
+            message = (
+                "Rural halo asset contains no features: "
+                f"{static_assets['halos_asset']}"
+            )
+        else:
+            message = (
+                "Rural halo asset contains no feature for the requested "
+                f"city ID {city_id}."
+            )
+        raise ValueError(message)
 
-    urban_mask_source = ee.Image(rural_config["gaia_asset"])
-
-    gaia_projection = (
-        urban_mask_source
-        .select("change_year_index")
-        .projection()
-    )
-
-    urban_exclusion = build_global_urban_exclusion_mask(
-        cities=cities,
-        buffer_m=rural_config["inner_buffer_m"],
-        max_error_m=rural_config["max_error_m"],
-        reference_projection=gaia_projection
-    )
-    
-    rural_binary = build_global_stable_rural_binary(
-        urban_mask_source=urban_mask_source,
-        dem_mask_source=ee.ImageCollection(rural_config["dem_collection"]),
-        global_exclusion_mask=urban_exclusion,
-        max_slope_deg=rural_config["max_slope_deg"],
-    )
-    _, rural_modis_mask = aggregate_rural_mask_to_modis(
-        rural_binary=rural_binary,
-        modis_projection=projection,
-        minimum_rural_fraction=(
+    rural_modis_mask = (
+        fraction
+        .select("rural_fraction")
+        .gte(
             rural_config["minimum_rural_fraction_per_modis_pixel"]
         )
+        .rename("rural_modis_mask")
     )
     return rural_halos, rural_modis_mask
 
@@ -72,7 +61,7 @@ def export_rural(
     scale: float
 ) -> None:
     """Export annual LST statistics for rural halo regions."""
-    rural_halos, rural_modis_mask = build_rural_inputs(config, projection)
+    rural_halos, rural_modis_mask = load_rural_inputs(config)
     run_annual_exports(
         dataset_name=config["export"]["rural_dataset_name"],
         regions=rural_halos,

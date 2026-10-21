@@ -5,7 +5,7 @@ from src.modis_lst_utils import (
     get_monthly_a2_collection
 )
 
-from export_rural_monthly_lst import build_rural_inputs
+from export_rural_monthly_lst import load_rural_inputs
 from src.export_utils import (
     LST_BANDS,
     LST_OUTPUT_FIELDS,
@@ -234,7 +234,6 @@ def main() -> None:
 
     test_config = config["test"]
     city_config = config["cities"]
-    rural_config = config["rural"]
     city_id = test_config["city_id"]
     year = test_config["year"]
     id_field = city_config["id_field"]
@@ -254,9 +253,8 @@ def main() -> None:
     projection, scale = get_modis_reference_grid(config)
     projection_info = projection.getInfo()
 
-    rural_halos, rural_mask = build_rural_inputs(
+    rural_halos, rural_mask = load_rural_inputs(
         config=config,
-        projection=projection,
         city_id=city_id
     )
     halo_count = rural_halos.size().getInfo()
@@ -267,12 +265,18 @@ def main() -> None:
 
     halo = ee.Feature(rural_halos.first())
     halo_geometry = halo.geometry()
-    halo_area_km2 = halo_geometry.area(
-        maxError=rural_config["max_error_m"]
-    ).divide(1_000_000).getInfo()
+    halo_area_km2 = halo.get("halo_area_km2").getInfo()
     if halo_area_km2 <= 0:
         raise AssertionError(
             f"Rural halo area must be positive, got {halo_area_km2}."
+        )
+    stored_rural_pixel_count = halo.get(
+        "rural_n_modis_pixels"
+    ).getInfo()
+    if stored_rural_pixel_count is None or stored_rural_pixel_count <= 0:
+        raise AssertionError(
+            "Rural halo asset must contain a positive "
+            "rural_n_modis_pixels value."
         )
 
     mask_projection = rural_mask.projection().getInfo()
@@ -300,6 +304,11 @@ def main() -> None:
         raise AssertionError(
             f"No eligible MODIS rural pixels were found in city {city_id}'s "
             "rural halo."
+        )
+    if rural_pixel_count != stored_rural_pixel_count:
+        raise AssertionError(
+            "Stored rural_n_modis_pixels does not match the static fraction "
+            f"mask count: {stored_rural_pixel_count} != {rural_pixel_count}."
         )
 
         # --------------------------------------------------

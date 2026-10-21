@@ -231,3 +231,106 @@ def aggregate_rural_mask_to_modis(
     )
 
     return rural_fraction, rural_mask
+
+
+def build_rural_fraction_image(
+    cities: ee.FeatureCollection,
+    urban_mask_source: ee.Image,
+    dem_mask_source: ee.ImageCollection,
+    modis_projection: ee.Projection,
+    inner_buffer_m: int,
+    max_error_m: int,
+    max_slope_deg: float,
+    minimum_rural_fraction: float
+) -> ee.Image:
+    """Build the MODIS-aligned rural fraction image for static export."""
+
+    gaia_projection = (
+        urban_mask_source
+        .select("change_year_index")
+        .projection()
+    )
+    urban_exclusion = build_global_urban_exclusion_mask(
+        cities=cities,
+        buffer_m=inner_buffer_m,
+        max_error_m=max_error_m,
+        reference_projection=gaia_projection
+    )
+    rural_binary = build_global_stable_rural_binary(
+        urban_mask_source=urban_mask_source,
+        dem_mask_source=dem_mask_source,
+        global_exclusion_mask=urban_exclusion,
+        max_slope_deg=max_slope_deg
+    )
+    rural_fraction, _ = aggregate_rural_mask_to_modis(
+        rural_binary=rural_binary,
+        modis_projection=modis_projection,
+        minimum_rural_fraction=minimum_rural_fraction
+    )
+    return rural_fraction
+
+
+def build_rural_halos_with_metrics(
+    cities: ee.FeatureCollection,
+    rural_fraction: ee.Image,
+    city_id_field: str,
+    inner_buffer_m: int,
+    outer_buffer_m: int,
+    max_error_m: int,
+    minimum_rural_fraction: float,
+    projection: ee.Projection,
+    scale: float,
+    tile_scale: int
+) -> ee.FeatureCollection:
+    """Build halo polygons with area and eligible MODIS pixel counts."""
+
+    halos = build_all_rural_halos(
+        cities=cities,
+        inner_buffer_m=inner_buffer_m,
+        outer_buffer_m=outer_buffer_m,
+        city_id_field=city_id_field,
+        max_error_m=max_error_m
+    )
+
+    def _add_area(feature):
+        feature = ee.Feature(feature)
+        area_km2 = (
+            feature.geometry()
+            .area(maxError=max_error_m)
+            .divide(1_000_000)
+        )
+        return feature.set("halo_area_km2", area_km2)
+
+    halos = halos.map(_add_area)
+    eligible_pixels = (
+        rural_fraction
+        .gte(minimum_rural_fraction)
+        .selfMask()
+        .rename("rural_pixel")
+    )
+    counted_halos = eligible_pixels.reduceRegions(
+        collection=halos,
+        reducer=ee.Reducer.count(),
+        crs=projection,
+        scale=scale,
+        tileScale=tile_scale
+    )
+
+    def _add_pixel_count(feature):
+        feature = ee.Feature(feature)
+        has_count = feature.propertyNames().contains("rural_pixel")
+        pixel_count = ee.Algorithms.If(
+            has_count,
+            feature.get("rural_pixel"),
+            0
+        )
+        return feature.set(
+            "rural_n_modis_pixels",
+            pixel_count
+        ).select([
+            city_id_field,
+            "halo_area_km2",
+            "rural_n_modis_pixels"
+        ])
+
+    return counted_halos.map(_add_pixel_count)
