@@ -102,6 +102,21 @@ def get_modis_reference_grid(
 
     return projection, native_scale
 
+def build_export_selectors(
+    id_field: str
+) -> list[str]:
+    """
+    Build a fixed output schema for annual CSV exports.
+    """
+
+    return [
+        id_field,
+        "year",
+        "month",
+        *LST_OUTPUT_FIELDS,
+        *QC_OUTPUT_FIELDS
+    ]
+
 
 def build_spatial_reducer() -> ee.Reducer:
     """Build the shared spatial summary reducer."""
@@ -344,15 +359,17 @@ def export_table_to_drive(
     collection: ee.FeatureCollection,
     description: str,
     folder: str,
-    file_name: str
+    file_name: str,
+    selectors: list[str]
 ) -> ee.batch.Task:
-    """Submit an Earth Engine CSV export task to Google Drive."""
+    """Submit a schema-explicit Earth Engine CSV export task to Google Drive."""
     task = ee.batch.Export.table.toDrive(
         collection=collection,
         description=description,
         folder=folder,
         fileNamePrefix=file_name,
-        fileFormat="CSV"
+        fileFormat="CSV",
+        selectors=selectors
     )
     task.start()
     print(f"[EXPORT] {description}")
@@ -439,7 +456,8 @@ def run_annual_exports(
             collection=annual_collection,
             description=f"{dataset_name}_{version}_{year}",
             folder=export_config["folder"],
-            file_name=f"{dataset_name}_{version}_{year}"
+            file_name=f"{dataset_name}_{version}_{year}",
+            selectors=build_export_selectors(id_field)
         )
 
         tasks.append(task)
