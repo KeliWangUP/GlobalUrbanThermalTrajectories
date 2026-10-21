@@ -101,6 +101,7 @@ def preprocess_a2_slot(
     slot_name: str,
     scale_factor: float = 0.02,
     kelvin_offset: float = -273.15,
+    apply_qa_mask: bool = True,
     mandatory_qa_max: int = 1,
     max_lst_error_code: int = 1,
     require_good_data_quality: bool = False
@@ -108,16 +109,9 @@ def preprocess_a2_slot(
     """
     Prepare one MODIS A2 observation slot.
 
-    Output bands
-    ------------
-    <slot>_weighted
-        LST multiplied by clear-sky observation count.
-
-    <slot>_weight
-        Number of clear-sky observations.
-
-    <slot>_ncomp
-        1 if this A2 composite is valid for the pixel, otherwise 0/masked.
+    When apply_qa_mask=False, validity is based only on:
+    - available LST
+    - at least one clear-sky observation
     """
 
     lst = (
@@ -125,29 +119,46 @@ def preprocess_a2_slot(
         .select(lst_band)
         .multiply(scale_factor)
         .add(kelvin_offset)
-        .toFloat()
     )
 
-    qa_mask = build_a2_qa_mask(
-        image=image,
-        qc_band=qc_band,
-        mandatory_qa_max=mandatory_qa_max,
-        max_lst_error_code=max_lst_error_code,
-        require_good_data_quality=require_good_data_quality
+    clear_count = (
+        count_clear_sky_bits(
+            image=image,
+            clear_band=clear_band
+        )
+        .unmask(0)
     )
 
-    clear_count = count_clear_sky_bits(
-        image=image,
-        clear_band=clear_band
-    )
+    if apply_qa_mask:
 
-    valid = (
-        qa_mask
-        .And(clear_count.gt(0))
-        .And(lst.mask().gt(0))
-    )
+        qa_mask = build_a2_qa_mask(
+            image=image,
+            qc_band=qc_band,
+            mandatory_qa_max=mandatory_qa_max,
+            max_lst_error_code=max_lst_error_code,
+            require_good_data_quality=require_good_data_quality
+        )
 
-    valid_numeric = valid.toByte()
+        valid = (
+            qa_mask
+            .And(clear_count.gt(0))
+            .And(lst.mask().gt(0))
+        )
+
+    else:
+
+        # Use the A2 product as delivered.
+        # Clear-sky flags indicate valid contributing observations.
+        valid = (
+            clear_count.gt(0)
+            .And(lst.mask().gt(0))
+        )
+
+    valid_numeric = (
+        valid
+        .unmask(0)
+        .toByte()
+    )
 
     weight = (
         clear_count
@@ -319,6 +330,7 @@ def build_monthly_a2_slot(
             slot_name=slot_name,
             scale_factor=modis_cfg["scale_factor"],
             kelvin_offset=modis_cfg["kelvin_offset"],
+            
             mandatory_qa_max=qa_cfg[
                 "mandatory_qa_max"
             ],

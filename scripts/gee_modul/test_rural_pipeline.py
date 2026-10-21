@@ -82,7 +82,14 @@ def diagnose_a2_image(
     # bits 6-7 -> 3
     # therefore masked QC fails quality tests.
     # --------------------------------------------------
-
+    qc_available = (
+        qc
+        .mask()
+        .unmask(0)
+        .gt(0)
+        .rename("qc_available")
+    )
+    
     qc_filled = qc.unmask(255)
 
     mandatory_qa = (
@@ -186,6 +193,7 @@ def diagnose_a2_image(
         ee.Image.cat([
             lst_available,
             has_clear_obs,
+            qc_available,
             mandatory_qa_0,
             mandatory_qa_le1,
             good_data_quality,
@@ -358,6 +366,7 @@ def diagnose_a2_month(
             f"final={final_valid:.3f} | "
             f"clear_raw={stats.get('raw_clear_count', 0):.2f} | "
             f"clear_final={final_clear:.2f}"
+            f"QC={stats.get('qc_available', 0):.3f} | "
         )
 
     print(

@@ -45,6 +45,7 @@
     "monthly_weighting": "clear_sky_count",
 
     "qa": {
+      "apply_qa_mask": false,
       "mandatory_qa_max": 1,
       "max_lst_error_code": 1,
       "require_good_data_quality": false
