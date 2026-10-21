@@ -1,8 +1,8 @@
 import ee
 
 from src.modis_lst_utils import (
-    add_composite_midpoint,
-    count_clear_sky_bits
+    compute_a2_validity,
+    get_monthly_a2_collection
 )
 
 from export_rural_monthly_lst import build_rural_inputs
@@ -40,146 +40,35 @@ def diagnose_a2_image(
         Client-side dictionary containing diagnostic statistics.
     """
 
-    lst = image.select(lst_band)
-    qc = image.select(qc_band)
-
-    # --------------------------------------------------
-    # LST availability
-    # --------------------------------------------------
-
-    lst_available = (
-        lst
-        .mask()
-        .unmask(0)
-        .gt(0)
-        .rename("lst_available")
+    # Production validity (same function as the export pipeline).
+    validity = compute_a2_validity(
+        image=image,
+        lst_band=lst_band,
+        qc_band=qc_band,
+        clear_band=clear_band,
+        qa_cfg=qa_config
     )
 
-    # --------------------------------------------------
-    # Clear-sky availability
-    # --------------------------------------------------
-
-    clear_count = (
-        count_clear_sky_bits(
-            image=image,
-            clear_band=clear_band
-        )
-        .unmask(0)
-        .toFloat()
-    )
-
-    has_clear_obs = (
-        clear_count
-        .gt(0)
-        .rename("has_clear_obs")
-    )
-
-    # --------------------------------------------------
-    # QA bits
-    #
-    # Use 255 for masked QC values:
-    # bits 0-1 -> 3
-    # bits 6-7 -> 3
-    # therefore masked QC fails quality tests.
-    # --------------------------------------------------
+    # Informational raw QC-bit pass rates; not used for validity.
+    qc_filled = image.select(qc_band).unmask(255)
     qc_available = (
-        qc
+        image.select(qc_band)
         .mask()
         .unmask(0)
         .gt(0)
         .rename("qc_available")
     )
-    
-    qc_filled = qc.unmask(255)
+    mandatory_qa = qc_filled.bitwiseAnd(3)
+    data_quality = qc_filled.rightShift(2).bitwiseAnd(3)
+    lst_error = qc_filled.rightShift(6).bitwiseAnd(3)
 
-    mandatory_qa = (
-        qc_filled
-        .bitwiseAnd(3)
-    )
-
-    mandatory_qa_0 = (
-        mandatory_qa
-        .eq(0)
-        .rename("mandatory_qa_0")
-    )
-
-    mandatory_qa_le1 = (
-        mandatory_qa
-        .lte(1)
-        .rename("mandatory_qa_le1")
-    )
-
-    data_quality = (
-        qc_filled
-        .rightShift(2)
-        .bitwiseAnd(3)
-    )
-
-    good_data_quality = (
-        data_quality
-        .eq(0)
-        .rename("good_data_quality")
-    )
-
-    lst_error = (
-        qc_filled
-        .rightShift(6)
-        .bitwiseAnd(3)
-    )
-
-    lst_error_le1 = (
-        lst_error
-        .lte(1)
-        .rename("lst_error_le1")
-    )
-
-    # --------------------------------------------------
-    # Build QA mask using CURRENT config
-    # --------------------------------------------------
-
-    current_qa_mask = mandatory_qa.lte(
-        qa_config["mandatory_qa_max"]
-    )
-
-    max_error_code = qa_config.get(
-        "max_lst_error_code"
-    )
-
-    if max_error_code is not None:
-        current_qa_mask = current_qa_mask.And(
-            lst_error.lte(max_error_code)
-        )
-
-    if qa_config.get(
-        "require_good_data_quality",
-        False
-    ):
-        current_qa_mask = current_qa_mask.And(
-            data_quality.eq(0)
-        )
-
-    current_qa_mask = current_qa_mask.rename(
-        "current_qa_pass"
-    )
-
-    # --------------------------------------------------
-    # Final validity under current production settings
-    # --------------------------------------------------
-
-    final_valid = (
-        lst_available
-        .And(has_clear_obs)
-        .And(current_qa_mask)
-        .rename("final_valid")
-    )
-
-    # Clear-sky observations that actually survive
-    # all production filters.
-    final_clear_count = (
-        clear_count
-        .multiply(final_valid)
-        .rename("final_clear_count")
-    )
+    raw_bits = ee.Image.cat([
+        qc_available,
+        mandatory_qa.eq(0).rename("mandatory_qa_0"),
+        mandatory_qa.lte(1).rename("mandatory_qa_le1"),
+        data_quality.eq(0).rename("good_data_quality"),
+        lst_error.lte(1).rename("lst_error_le1")
+    ])
 
     # --------------------------------------------------
     # Diagnostic image
@@ -191,17 +80,15 @@ def diagnose_a2_image(
 
     diagnostic_image = (
         ee.Image.cat([
-            lst_available,
-            has_clear_obs,
-            qc_available,
-            mandatory_qa_0,
-            mandatory_qa_le1,
-            good_data_quality,
-            lst_error_le1,
-            current_qa_mask,
-            final_valid,
-            clear_count.rename("raw_clear_count"),
-            final_clear_count
+            validity.select([
+                "lst_available",
+                "has_clear_obs",
+                "qa_pass",
+                "final_valid",
+                "final_clear_count"
+            ]),
+            validity.select("clear_count").rename("raw_clear_count"),
+            raw_bits
         ])
         .updateMask(rural_mask)
     )
@@ -249,51 +136,11 @@ def diagnose_a2_month(
 
     qa_config = config["modis"]["qa"]
 
-    month_start = ee.Date.fromYMD(
-        year,
-        month,
-        1
-    )
-
-    month_end = month_start.advance(
-        1,
-        "month"
-    )
-
-    # Must match build_monthly_a2_slot().
-    source_start = month_start.advance(
-        -4,
-        "day"
-    )
-
-    source_end = month_end.advance(
-        -4,
-        "day"
-    )
-
-    collection = (
-        ee.ImageCollection(
-            slot_config["collection"]
-        )
-        .filterDate(
-            source_start,
-            source_end
-        )
-        .map(add_composite_midpoint)
-        .filter(
-            ee.Filter.gte(
-                "composite_mid_time",
-                month_start.millis()
-            )
-        )
-        .filter(
-            ee.Filter.lt(
-                "composite_mid_time",
-                month_end.millis()
-            )
-        )
-        .sort("system:time_start")
-    )
+    collection = get_monthly_a2_collection(
+        year=year,
+        month=month,
+        collection_id=slot_config["collection"]
+    ).sort("system:time_start")
 
     n_images = collection.size().getInfo()
 
@@ -362,11 +209,11 @@ def diagnose_a2_month(
             f"QA<=1={stats.get('mandatory_qa_le1', 0):.3f} | "
             f"dataQ0={stats.get('good_data_quality', 0):.3f} | "
             f"err<=2K={stats.get('lst_error_le1', 0):.3f} | "
-            f"currentQA={stats.get('current_qa_pass', 0):.3f} | "
+            f"qaPass={stats.get('qa_pass', 0):.3f} | "
             f"final={final_valid:.3f} | "
             f"clear_raw={stats.get('raw_clear_count', 0):.2f} | "
-            f"clear_final={final_clear:.2f}"
-            f"QC={stats.get('qc_available', 0):.3f} | "
+            f"clear_final={final_clear:.2f} | "
+            f"QC={stats.get('qc_available', 0):.3f}"
         )
 
     print(
