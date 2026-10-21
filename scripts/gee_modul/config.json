@@ -104,7 +104,8 @@
 
     "static_assets": {
       "fraction_collection_asset": "projects/ee-keliwangpy/assets/GlobalUrbanThermalTrajectories/rural_fraction_modis_fixed2024_v0_1",
-      "halos_asset": "projects/ee-keliwangpy/assets/GlobalUrbanThermalTrajectories/rural_halos_fixed2024_v0_1"
+      "halos_asset": "projects/ee-keliwangpy/assets/GlobalUrbanThermalTrajectories/rural_halos_fixed2024_v0_1",
+      "test_fraction_asset": "projects/ee-keliwangpy/assets/GlobalUrbanThermalTrajectories/rural_fraction_chunk_test_5249_v0_1"
     }
   },
 

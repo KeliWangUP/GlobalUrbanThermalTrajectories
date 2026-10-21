@@ -31,9 +31,61 @@ def ensure_fraction_collection(collection_id: str) -> None:
         )
 
 
+def require_tested_chunk(config: dict) -> None:
+    """Require a successful single-chunk export with current settings."""
+
+    rural_config = config["rural"]
+    test_asset_id = rural_config["static_assets"]["test_fraction_asset"]
+    try:
+        asset = ee.data.getAsset(test_asset_id)
+    except ee.EEException as exc:
+        raise RuntimeError(
+            "Global fraction export is gated on a successful test chunk. "
+            "Run test_rural_fraction_chunk.py and wait for its task to "
+            f"complete first. Test asset: {test_asset_id}"
+        ) from exc
+
+    if asset.get("type") != "IMAGE":
+        raise ValueError(
+            f"Rural fraction test asset is not an IMAGE: {test_asset_id}"
+        )
+
+    test_config = config["test"]
+    grid_config = config["reference_grid"]["tile_grid"]
+    expected = {
+        "test_city_id": test_config["city_id"],
+        "test_chunk_size_pixels": grid_config["chunk_size_pixels"],
+        "test_max_input_pixels_per_modis_pixel": (
+            rural_config["max_input_pixels_per_modis_pixel"]
+        ),
+        "test_minimum_rural_fraction_per_modis_pixel": (
+            rural_config["minimum_rural_fraction_per_modis_pixel"]
+        ),
+        "test_inner_buffer_m": rural_config["inner_buffer_m"],
+        "test_outer_buffer_m": rural_config["outer_buffer_m"],
+        "test_max_slope_deg": rural_config["max_slope_deg"],
+        "test_max_error_m": rural_config["max_error_m"],
+        "test_gaia_asset": rural_config["gaia_asset"],
+        "test_dem_collection": rural_config["dem_collection"]
+    }
+    actual = asset.get("properties", {})
+    mismatches = {
+        key: (expected_value, actual.get(key))
+        for key, expected_value in expected.items()
+        if actual.get(key) != expected_value
+    }
+    if mismatches:
+        raise RuntimeError(
+            "Rural fraction test asset does not match the current "
+            f"configuration: {mismatches}. Rerun test_rural_fraction_chunk.py "
+            "with a new test_fraction_asset path."
+        )
+
+
 def main() -> None:
     config = load_config()
     initialize_gee(config)
+    require_tested_chunk(config)
 
     projection, scale = get_modis_reference_grid(config)
     city_config = config["cities"]
@@ -131,7 +183,7 @@ def main() -> None:
             region=chunk_region,
             crs=projection_info["crs"],
             crsTransform=transform,
-            maxPixels=chunk_size ** 2,
+            maxPixels=(chunk_size + 2) ** 2,
             pyramidingPolicy={".default": "mean"}
         )
         task.start()
