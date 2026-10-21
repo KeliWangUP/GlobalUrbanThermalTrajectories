@@ -92,6 +92,7 @@
     "dem_collection": "COPERNICUS/DEM/GLO30_2024_1",
 
     "minimum_rural_fraction_per_modis_pixel": 0.8,
+    "max_input_pixels_per_modis_pixel": 16384,
 
     "static_assets": {
       "fraction_asset": "projects/ee-keliwangpy/assets/GlobalUrbanThermalTrajectories/rural_fraction_modis_fixed2024_v0_1",

@@ -29,6 +29,9 @@ def main() -> None:
         max_slope_deg=rural_config["max_slope_deg"],
         minimum_rural_fraction=(
             rural_config["minimum_rural_fraction_per_modis_pixel"]
+        ),
+        max_input_pixels=(
+            rural_config["max_input_pixels_per_modis_pixel"]
         )
     )
 

@@ -205,10 +205,14 @@ def build_global_stable_rural_binary(
 def aggregate_rural_mask_to_modis(
     rural_binary: ee.Image,
     modis_projection: ee.Projection,
-    minimum_rural_fraction: float
+    minimum_rural_fraction: float,
+    max_input_pixels: int
 ) -> tuple[ee.Image, ee.Image]:
     """
     Convert fine-resolution rural suitability to MODIS-grid purity.
+
+    max_input_pixels must cover the greatest source-pixel count needed
+    for any output pixel under the source and MODIS projections.
     """
 
     rural_fraction = (
@@ -216,7 +220,7 @@ def aggregate_rural_mask_to_modis(
         .toFloat()
         .reduceResolution(
             reducer=ee.Reducer.mean(),
-            maxPixels=4096
+            maxPixels=max_input_pixels
         )
         .reproject(
             crs=modis_projection
@@ -241,7 +245,8 @@ def build_rural_fraction_image(
     inner_buffer_m: int,
     max_error_m: int,
     max_slope_deg: float,
-    minimum_rural_fraction: float
+    minimum_rural_fraction: float,
+    max_input_pixels: int
 ) -> ee.Image:
     """Build the MODIS-aligned rural fraction image for static export."""
 
@@ -265,7 +270,8 @@ def build_rural_fraction_image(
     rural_fraction, _ = aggregate_rural_mask_to_modis(
         rural_binary=rural_binary,
         modis_projection=modis_projection,
-        minimum_rural_fraction=minimum_rural_fraction
+        minimum_rural_fraction=minimum_rural_fraction,
+        max_input_pixels=max_input_pixels
     )
     return rural_fraction
 
