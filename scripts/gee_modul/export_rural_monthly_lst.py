@@ -14,14 +14,20 @@ def load_rural_inputs(
     static_assets = rural_config["static_assets"]
     id_field = config["cities"]["id_field"]
 
-    fraction = ee.Image(
-        static_assets["fraction_asset"]
+    fraction_collection = ee.ImageCollection(
+        static_assets["fraction_collection_asset"]
     )
+    if fraction_collection.size().getInfo() == 0:
+        raise ValueError(
+            "Rural fraction ImageCollection contains no tiles: "
+            f"{static_assets['fraction_collection_asset']}"
+        )
+    fraction = fraction_collection.mosaic()
     band_names = fraction.bandNames().getInfo()
     if "rural_fraction" not in band_names:
         raise ValueError(
             "Rural fraction asset is missing the 'rural_fraction' band: "
-            f"{static_assets['fraction_asset']}"
+            f"{static_assets['fraction_collection_asset']}"
         )
 
     rural_halos = ee.FeatureCollection(

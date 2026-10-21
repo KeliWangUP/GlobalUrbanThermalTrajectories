@@ -1,3 +1,6 @@
+from typing import Any
+from math import ceil
+
 import ee
 
 def build_rural_halo(
@@ -277,11 +280,9 @@ def build_rural_fraction_image(
 
 
 def build_rural_halos_with_metrics(
-    cities: ee.FeatureCollection,
+    rural_halos: ee.FeatureCollection,
     rural_fraction: ee.Image,
     city_id_field: str,
-    inner_buffer_m: int,
-    outer_buffer_m: int,
     max_error_m: int,
     minimum_rural_fraction: float,
     projection: ee.Projection,
@@ -289,14 +290,6 @@ def build_rural_halos_with_metrics(
     tile_scale: int
 ) -> ee.FeatureCollection:
     """Build halo polygons with area and eligible MODIS pixel counts."""
-
-    halos = build_all_rural_halos(
-        cities=cities,
-        inner_buffer_m=inner_buffer_m,
-        outer_buffer_m=outer_buffer_m,
-        city_id_field=city_id_field,
-        max_error_m=max_error_m
-    )
 
     def _add_area(feature):
         feature = ee.Feature(feature)
@@ -307,7 +300,7 @@ def build_rural_halos_with_metrics(
         )
         return feature.set("halo_area_km2", area_km2)
 
-    halos = halos.map(_add_area)
+    rural_halos = rural_halos.map(_add_area)
     eligible_pixels = (
         rural_fraction
         .gte(minimum_rural_fraction)
@@ -315,7 +308,7 @@ def build_rural_halos_with_metrics(
         .rename("rural_pixel")
     )
     counted_halos = eligible_pixels.reduceRegions(
-        collection=halos,
+        collection=rural_halos,
         reducer=ee.Reducer.count(),
         crs=projection,
         scale=scale,
@@ -340,3 +333,206 @@ def build_rural_halos_with_metrics(
         ])
 
     return counted_halos.map(_add_pixel_count)
+
+
+def get_rural_modis_tile_ids(
+    rural_halos: ee.FeatureCollection,
+    max_error_m: int,
+    projection_crs: str,
+    scale: float,
+    tile_grid: dict[str, Any]
+) -> list[str]:
+    """Return native MODIS tiles intersecting the rural coverage area."""
+
+    tile_size_m = scale * tile_grid["pixels_per_tile"]
+    global_x_min = tile_grid["global_x_min_m"]
+    global_y_max = tile_grid["global_y_max_m"]
+    tile_features = []
+
+    for horizontal in range(tile_grid["horizontal_tiles"]):
+        for vertical in range(tile_grid["vertical_tiles"]):
+            left = global_x_min + horizontal * tile_size_m
+            top = global_y_max - vertical * tile_size_m
+            tile_region = ee.Geometry.Rectangle(
+                [
+                    left,
+                    top - tile_size_m,
+                    left + tile_size_m,
+                    top
+                ],
+                proj=projection_crs,
+                geodesic=False
+            )
+            tile_features.append(
+                ee.Feature(
+                    tile_region,
+                    {
+                        "tile_id": (
+                            f"h{horizontal:02d}_v{vertical:02d}"
+                        )
+                    }
+                )
+            )
+
+    coverage = rural_halos.geometry(
+        maxError=max_error_m
+    )
+    intersecting_ids = (
+        ee.FeatureCollection(tile_features)
+        .filterBounds(coverage)
+        .aggregate_array("tile_id")
+        .getInfo()
+    )
+    if not intersecting_ids:
+        raise ValueError(
+            "No MODIS tiles intersect the configured rural coverage."
+        )
+    return sorted(intersecting_ids)
+
+
+def get_rural_modis_chunk_ids(
+    rural_halos: ee.FeatureCollection,
+    max_error_m: int,
+    projection_crs: str,
+    scale: float,
+    tile_grid: dict[str, Any]
+) -> list[str]:
+    """Return MODIS-aligned chunks intersecting rural coverage."""
+
+    native_tile_ids = get_rural_modis_tile_ids(
+        rural_halos=rural_halos,
+        max_error_m=max_error_m,
+        projection_crs=projection_crs,
+        scale=scale,
+        tile_grid=tile_grid
+    )
+    pixels_per_tile = tile_grid["pixels_per_tile"]
+    chunk_size = tile_grid["chunk_size_pixels"]
+    total_columns = tile_grid["horizontal_tiles"] * pixels_per_tile
+    total_rows = tile_grid["vertical_tiles"] * pixels_per_tile
+    chunk_columns = (total_columns + chunk_size - 1) // chunk_size
+    chunk_rows = (total_rows + chunk_size - 1) // chunk_size
+    candidate_indices: set[tuple[int, int]] = set()
+
+    for tile_id in native_tile_ids:
+        horizontal_text, vertical_text = tile_id.split("_")
+        horizontal = int(horizontal_text.removeprefix("h"))
+        vertical = int(vertical_text.removeprefix("v"))
+        first_column = (
+            horizontal * pixels_per_tile
+        ) // chunk_size
+        last_column = (
+            (horizontal + 1) * pixels_per_tile - 1
+        ) // chunk_size
+        first_row = (
+            vertical * pixels_per_tile
+        ) // chunk_size
+        last_row = (
+            (vertical + 1) * pixels_per_tile - 1
+        ) // chunk_size
+        for column in range(first_column, last_column + 1):
+            for row in range(first_row, last_row + 1):
+                if column < chunk_columns and row < chunk_rows:
+                    candidate_indices.add((column, row))
+
+    chunk_size_m = scale * chunk_size
+    global_x_min = tile_grid["global_x_min_m"]
+    global_y_max = tile_grid["global_y_max_m"]
+    chunk_features = []
+    for column, row in sorted(candidate_indices):
+        left = global_x_min + column * chunk_size_m
+        top = global_y_max - row * chunk_size_m
+        width = min(chunk_size, total_columns - column * chunk_size)
+        height = min(chunk_size, total_rows - row * chunk_size)
+        chunk_region = ee.Geometry.Rectangle(
+            [
+                left,
+                top - height * scale,
+                left + width * scale,
+                top
+            ],
+            proj=projection_crs,
+            geodesic=False
+        )
+        chunk_features.append(
+            ee.Feature(
+                chunk_region,
+                {"chunk_id": f"c{column:03d}_r{row:03d}"}
+            )
+        )
+
+    coverage = rural_halos.geometry(
+        maxError=max_error_m
+    )
+    intersecting_ids = (
+        ee.FeatureCollection(chunk_features)
+        .filterBounds(coverage)
+        .aggregate_array("chunk_id")
+        .getInfo()
+    )
+    if not intersecting_ids:
+        raise ValueError(
+            "No MODIS grid chunks intersect the configured rural coverage."
+        )
+    return sorted(intersecting_ids)
+
+
+def get_modis_chunk_export_grid(
+    chunk_id: str,
+    projection_crs: str,
+    scale: float,
+    tile_grid: dict[str, Any]
+) -> tuple[ee.Geometry, list[float]]:
+    """Build a chunk geometry and affine transform on the MODIS grid."""
+
+    try:
+        column_text, row_text = chunk_id.split("_")
+        column = int(column_text.removeprefix("c"))
+        row = int(row_text.removeprefix("r"))
+    except (ValueError, TypeError) as exc:
+        raise ValueError(f"Invalid MODIS chunk ID: {chunk_id}") from exc
+
+    chunk_size = tile_grid["chunk_size_pixels"]
+    total_columns = (
+        tile_grid["horizontal_tiles"]
+        * tile_grid["pixels_per_tile"]
+    )
+    total_rows = (
+        tile_grid["vertical_tiles"]
+        * tile_grid["pixels_per_tile"]
+    )
+    if not (
+        0 <= column < ceil(total_columns / chunk_size)
+        and 0 <= row < ceil(total_rows / chunk_size)
+    ):
+        raise ValueError(f"MODIS chunk ID is outside the grid: {chunk_id}")
+
+    left = (
+        tile_grid["global_x_min_m"]
+        + column * chunk_size * scale
+    )
+    top = (
+        tile_grid["global_y_max_m"]
+        - row * chunk_size * scale
+    )
+    width = min(chunk_size, total_columns - column * chunk_size)
+    height = min(chunk_size, total_rows - row * chunk_size)
+    region = ee.Geometry.Rectangle(
+        [
+            left,
+            top - height * scale,
+            left + width * scale,
+            top
+        ],
+        proj=projection_crs,
+        geodesic=False
+    )
+    transform = [
+        scale,
+        0,
+        left,
+        0,
+        -scale,
+        top
+    ]
+    return region, transform

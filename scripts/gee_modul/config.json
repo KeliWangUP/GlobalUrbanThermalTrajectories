@@ -28,7 +28,15 @@
     "collection": "MODIS/061/MOD11A1",
     "band": "LST_Day_1km",
     "reference_date": "2001-01-01",
-    "pixel_id_prefix": "MODIS"
+    "pixel_id_prefix": "MODIS",
+    "tile_grid": {
+      "horizontal_tiles": 36,
+      "vertical_tiles": 18,
+      "pixels_per_tile": 1200,
+      "chunk_size_pixels": 200,
+      "global_x_min_m": -20015109.354,
+      "global_y_max_m": 10007554.677
+    }
   },
 
   "cities": {
@@ -92,10 +100,10 @@
     "dem_collection": "COPERNICUS/DEM/GLO30_2024_1",
 
     "minimum_rural_fraction_per_modis_pixel": 0.8,
-    "max_input_pixels_per_modis_pixel": 16384,
+    "max_input_pixels_per_modis_pixel": 32768,
 
     "static_assets": {
-      "fraction_asset": "projects/ee-keliwangpy/assets/GlobalUrbanThermalTrajectories/rural_fraction_modis_fixed2024_v0_1",
+      "fraction_collection_asset": "projects/ee-keliwangpy/assets/GlobalUrbanThermalTrajectories/rural_fraction_modis_fixed2024_v0_1",
       "halos_asset": "projects/ee-keliwangpy/assets/GlobalUrbanThermalTrajectories/rural_halos_fixed2024_v0_1"
     }
   },

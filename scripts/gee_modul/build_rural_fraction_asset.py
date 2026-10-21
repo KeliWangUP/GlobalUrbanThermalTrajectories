@@ -5,17 +5,92 @@ from src.export_utils import (
     initialize_gee,
     load_config
 )
-from src.rural_reference_utils import build_rural_fraction_image
+from src.rural_reference_utils import (
+    build_all_rural_halos,
+    build_rural_fraction_image,
+    get_modis_chunk_export_grid,
+    get_rural_modis_chunk_ids
+)
+
+
+def ensure_fraction_collection(collection_id: str) -> None:
+    """Create the destination ImageCollection if it does not exist."""
+
+    try:
+        asset = ee.data.getAsset(collection_id)
+    except ee.EEException:
+        asset = ee.data.createAsset(
+            {"type": "IMAGE_COLLECTION"},
+            collection_id
+        )
+
+    if asset.get("type") != "IMAGE_COLLECTION":
+        raise ValueError(
+            "Rural fraction destination must be an ImageCollection asset: "
+            f"{collection_id}"
+        )
 
 
 def main() -> None:
     config = load_config()
     initialize_gee(config)
 
-    projection, _ = get_modis_reference_grid(config)
+    projection, scale = get_modis_reference_grid(config)
     city_config = config["cities"]
     rural_config = config["rural"]
+    grid_config = config["reference_grid"]["tile_grid"]
+    chunk_size = grid_config["chunk_size_pixels"]
+    max_input_pixels = rural_config[
+        "max_input_pixels_per_modis_pixel"
+    ]
+    estimated_chunk_inputs = (
+        (chunk_size + 2) ** 2
+        * max_input_pixels
+    )
+    if estimated_chunk_inputs >= 2 ** 31:
+        raise ValueError(
+            "Configured MODIS chunk may exceed Earth Engine's 2^31 input "
+            "pixel limit. Reduce chunk_size_pixels or "
+            "max_input_pixels_per_modis_pixel."
+        )
+    collection_id = rural_config["static_assets"][
+        "fraction_collection_asset"
+    ]
     cities = ee.FeatureCollection(city_config["asset"])
+    rural_halos = build_all_rural_halos(
+        cities=cities,
+        inner_buffer_m=rural_config["inner_buffer_m"],
+        outer_buffer_m=rural_config["outer_buffer_m"],
+        city_id_field=city_config["id_field"],
+        max_error_m=rural_config["max_error_m"]
+    )
+
+    projection_info = projection.getInfo()
+    chunk_ids = get_rural_modis_chunk_ids(
+        rural_halos=rural_halos,
+        max_error_m=rural_config["max_error_m"],
+        projection_crs=projection_info["crs"],
+        scale=scale,
+        tile_grid=grid_config
+    )
+    ensure_fraction_collection(collection_id)
+    existing_chunk_ids = set(
+        ee.ImageCollection(collection_id)
+        .aggregate_array("chunk_id")
+        .getInfo()
+        or []
+    )
+    pending_chunk_ids = [
+        chunk_id
+        for chunk_id in chunk_ids
+        if chunk_id not in existing_chunk_ids
+    ]
+    if not pending_chunk_ids:
+        print(
+            f"[INFO] All {len(chunk_ids)} rural MODIS fraction chunks "
+            "already exist."
+        )
+        return
 
     rural_fraction = build_rural_fraction_image(
         cities=cities,
@@ -30,33 +105,41 @@ def main() -> None:
         minimum_rural_fraction=(
             rural_config["minimum_rural_fraction_per_modis_pixel"]
         ),
-        max_input_pixels=(
-            rural_config["max_input_pixels_per_modis_pixel"]
-        )
+        max_input_pixels=max_input_pixels
     )
 
-    asset_id = rural_config["static_assets"]["fraction_asset"]
-    projection_info = projection.getInfo()
-    region = ee.Geometry.Rectangle(
-        [-180, -90, 180, 90],
-        proj="EPSG:4326",
-        geodesic=False
-    )
-    task = ee.batch.Export.image.toAsset(
-        image=rural_fraction,
-        description=asset_id.rsplit("/", 1)[-1],
-        assetId=asset_id,
-        region=region,
-        crs=projection_info["crs"],
-        crsTransform=projection_info["transform"],
-        maxPixels=10_000_000_000_000,
-        pyramidingPolicy={".default": "mean"}
-    )
-    task.start()
-    print(f"[EXPORT] Rural fraction asset: {asset_id}")
-    print(f"[TASK] {task.id}")
     print(
-        "[NEXT] Wait for this task to complete, then run "
+        f"[INFO] Rural MODIS chunks intersecting coverage: "
+        f"{len(chunk_ids)}; new chunk exports: {len(pending_chunk_ids)}."
+    )
+    for chunk_id in pending_chunk_ids:
+        chunk_region, transform = get_modis_chunk_export_grid(
+            chunk_id=chunk_id,
+            projection_crs=projection_info["crs"],
+            scale=scale,
+            tile_grid=grid_config
+        )
+        chunk_asset_id = f"{collection_id}/{chunk_id}"
+        chunk_image = rural_fraction.clip(chunk_region).set(
+            "chunk_id",
+            chunk_id
+        )
+        task = ee.batch.Export.image.toAsset(
+            image=chunk_image,
+            description=f"rural_fraction_{chunk_id}",
+            assetId=chunk_asset_id,
+            region=chunk_region,
+            crs=projection_info["crs"],
+            crsTransform=transform,
+            maxPixels=chunk_size ** 2,
+            pyramidingPolicy={".default": "mean"}
+        )
+        task.start()
+        print(f"[EXPORT] {chunk_asset_id}")
+        print(f"[TASK] {task.id}")
+
+    print(
+        "[NEXT] Wait for all chunk tasks to complete, then run "
         "build_rural_halos_asset.py."
     )
 
