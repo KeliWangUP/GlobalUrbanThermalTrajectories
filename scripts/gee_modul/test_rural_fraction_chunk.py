@@ -77,7 +77,6 @@ def main() -> None:
         dem_mask_source=ee.ImageCollection(
             rural_config["dem_collection"]
         ),
-        modis_projection=projection,
         inner_buffer_m=rural_config["inner_buffer_m"],
         max_error_m=rural_config["max_error_m"],
         max_slope_deg=rural_config["max_slope_deg"],
@@ -91,6 +90,7 @@ def main() -> None:
 
     test_image = rural_fraction.clip(chunk_region).set({
         "chunk_id": chunk_id,
+        "test_processing_revision": 2,
         "test_city_id": city_id,
         "test_chunk_size_pixels": grid_config["chunk_size_pixels"],
         "test_max_input_pixels_per_modis_pixel": (

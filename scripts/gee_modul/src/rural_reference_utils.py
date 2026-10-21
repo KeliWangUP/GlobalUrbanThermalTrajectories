@@ -207,7 +207,6 @@ def build_global_stable_rural_binary(
 
 def aggregate_rural_mask_to_modis(
     rural_binary: ee.Image,
-    modis_projection: ee.Projection,
     minimum_rural_fraction: float,
     max_input_pixels: int
 ) -> tuple[ee.Image, ee.Image]:
@@ -225,9 +224,6 @@ def aggregate_rural_mask_to_modis(
             reducer=ee.Reducer.mean(),
             maxPixels=max_input_pixels
         )
-        .reproject(
-            crs=modis_projection
-        )
         .rename("rural_fraction")
     )
 
@@ -244,7 +240,6 @@ def build_rural_fraction_image(
     cities: ee.FeatureCollection,
     urban_mask_source: ee.Image,
     dem_mask_source: ee.ImageCollection,
-    modis_projection: ee.Projection,
     inner_buffer_m: int,
     max_error_m: int,
     max_slope_deg: float,
@@ -272,7 +267,6 @@ def build_rural_fraction_image(
     )
     rural_fraction, _ = aggregate_rural_mask_to_modis(
         rural_binary=rural_binary,
-        modis_projection=modis_projection,
         minimum_rural_fraction=minimum_rural_fraction,
         max_input_pixels=max_input_pixels
     )
