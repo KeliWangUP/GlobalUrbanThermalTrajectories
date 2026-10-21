@@ -55,7 +55,6 @@ def build_rural_inputs(
         dem_mask_source=ee.ImageCollection(rural_config["dem_collection"]),
         global_exclusion_mask=urban_exclusion,
         max_slope_deg=rural_config["max_slope_deg"],
-        source_scale_m=rural_config["rural_mask_scale_m"]
     )
     _, rural_modis_mask = aggregate_rural_mask_to_modis(
         rural_binary=rural_binary,

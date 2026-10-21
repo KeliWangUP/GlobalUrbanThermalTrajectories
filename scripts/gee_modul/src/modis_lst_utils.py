@@ -241,13 +241,20 @@ def build_monthly_a2_slot(
 
         <slot>
             Monthly weighted mean LST.
+            Masked where no valid observation exists.
 
         <slot>_clear_days
-            Total clear-sky observation weight from A2 composites
-            assigned to the month.
+            Total number of valid clear-sky observations represented
+            by A2 composites assigned to the month.
+
+            Pixels with no valid observations are explicitly set to 0
+            when the sensor/month exists.
 
         <slot>_n8day
             Number of valid A2 composites contributing at each pixel.
+
+            Pixels with no valid composites are explicitly set to 0
+            when the sensor/month exists.
     """
 
     month_start = ee.Date.fromYMD(
@@ -267,8 +274,6 @@ def build_monthly_a2_slot(
     # start date falls approximately within:
     #
     # [month_start - 4 days, month_end - 4 days)
-    #
-    # Prefiltering here avoids mapping the entire archive.
     source_start = month_start.advance(
         -4,
         "day"
@@ -326,10 +331,14 @@ def build_monthly_a2_slot(
             )
         )
 
-    processed = collection.map(_process)
+    processed = collection.map(
+        _process
+    )
 
-    # Use a masked dummy image when the collection is empty.
-    # This avoids special handling for Terra/Aqua availability later.
+    # --------------------------------------------------
+    # Safe dummy for empty source collections
+    # --------------------------------------------------
+
     empty_processed = create_empty_processed_slot(
         slot_name=slot_name,
         reference_projection=reference_projection
@@ -345,12 +354,25 @@ def build_monthly_a2_slot(
         )
     )
 
+    # --------------------------------------------------
+    # Monthly aggregation
+    # --------------------------------------------------
+    #
+    # Important:
+    #
+    # QC bands are explicitly zero-filled after summation.
+    # This ensures later spatial means use ALL analysis pixels
+    # as the denominator, including pixels with zero valid
+    # observations.
+    # --------------------------------------------------
+
     weighted_sum = (
         safe_processed
         .select(
             f"{slot_name}_weighted"
         )
         .sum()
+        .unmask(0)
     )
 
     clear_days = (
@@ -359,6 +381,7 @@ def build_monthly_a2_slot(
             f"{slot_name}_weight"
         )
         .sum()
+        .unmask(0)
         .rename(
             f"{slot_name}_clear_days"
         )
@@ -370,11 +393,13 @@ def build_monthly_a2_slot(
             f"{slot_name}_ncomp"
         )
         .sum()
+        .unmask(0)
         .rename(
             f"{slot_name}_n8day"
         )
     )
 
+    # LST remains masked where there are no valid observations.
     monthly_lst = (
         weighted_sum
         .divide(clear_days)
@@ -384,17 +409,52 @@ def build_monthly_a2_slot(
         .rename(slot_name)
     )
 
-    return (
+    monthly_result = (
         monthly_lst
         .addBands(clear_days)
         .addBands(n8day)
-        .set({
-            "year": year,
-            "month": month,
-            "slot": slot_name,
-            "n_source_composites": collection.size()
-        })
     )
+
+    # --------------------------------------------------
+    # Truly unavailable sensor/month
+    #
+    # Example:
+    # Aqua in 2001 should remain null/masked rather than
+    # being interpreted as zero observations from an
+    # operational sensor.
+    # --------------------------------------------------
+
+    empty_result = (
+        ee.Image.constant([
+            0, 0, 0
+        ])
+        .rename([
+            slot_name,
+            f"{slot_name}_clear_days",
+            f"{slot_name}_n8day"
+        ])
+        .updateMask(
+            ee.Image.constant(0)
+        )
+        .setDefaultProjection(
+            reference_projection
+        )
+    )
+
+    result = ee.Image(
+        ee.Algorithms.If(
+            collection.size().gt(0),
+            monthly_result,
+            empty_result
+        )
+    )
+
+    return result.set({
+        "year": year,
+        "month": month,
+        "slot": slot_name,
+        "n_source_composites": collection.size()
+    })
 
 
 def build_monthly_four_slot_image(
