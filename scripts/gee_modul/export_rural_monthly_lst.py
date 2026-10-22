@@ -14,7 +14,10 @@ from src.export_utils import (
     list_image_asset_names,
     run_annual_exports
 )
-from src.rural_reference_utils import RURAL_FRACTION_BAND
+from src.rural_reference_utils import (
+    RURAL_FRACTION_BAND,
+    apply_rural_fraction_threshold
+)
 
 
 def load_rural_halos(
@@ -58,15 +61,7 @@ def build_rural_mask(
         .select(RURAL_FRACTION_BAND)
         .mosaic()
     )
-    fraction_scale = static_config["fraction_value_scale"]
-    minimum_fraction = rural_config[
-        "minimum_rural_fraction_per_modis_pixel"
-    ]
-    return (
-        fraction
-        .gte(round(minimum_fraction * fraction_scale))
-        .rename("rural_modis_mask")
-    )
+    return apply_rural_fraction_threshold(config, fraction)
 
 
 def verify_static_rural_assets(

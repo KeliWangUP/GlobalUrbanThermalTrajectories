@@ -7,6 +7,24 @@ from src.batch_utils import TILE_ID_PROPERTY
 RURAL_FRACTION_BAND = "rural_fraction_scaled"
 
 
+def apply_rural_fraction_threshold(
+    config: dict[str, Any],
+    fraction: ee.Image
+) -> ee.Image:
+    """Threshold a scaled rural fraction image into a MODIS binary mask."""
+    rural_config = config["rural"]
+    static_config = rural_config["static_assets"]
+    fraction_scale = static_config["fraction_value_scale"]
+    minimum_fraction = rural_config[
+        "minimum_rural_fraction_per_modis_pixel"
+    ]
+    return (
+        fraction
+        .gte(round(minimum_fraction * fraction_scale))
+        .rename("rural_modis_mask")
+    )
+
+
 def build_rural_halo(
     feature: ee.Feature,
     all_cities: ee.FeatureCollection,
@@ -139,18 +157,18 @@ def build_local_rural_eligibility(
     )
 
 
-def build_rural_fraction_for_subtile(
+def build_rural_fraction_for_region(
     config: dict[str, Any],
     modis_projection: ee.Projection,
     intermediate_projection: ee.Projection,
-    subtile_region: ee.Geometry,
+    region: ee.Geometry,
     scale: float
 ) -> ee.Image:
-    """Aggregate fine suitability through a local nested MODIS grid."""
+    """Aggregate fine suitability over a bounded region on nested MODIS grids."""
     rural_config = config["rural"]
     static_config = rural_config["static_assets"]
     max_error_m = rural_config["max_error_m"]
-    processing_region = subtile_region.buffer(
+    processing_region = region.buffer(
         static_config["processing_buffer_modis_pixels"] * scale,
         max_error_m
     )
@@ -199,5 +217,5 @@ def build_rural_fraction_for_subtile(
         .floor()
         .toUint16()
         .rename(RURAL_FRACTION_BAND)
-        .clip(subtile_region)
+        .clip(region)
     )

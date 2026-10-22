@@ -14,7 +14,7 @@ from src.export_utils import (
 )
 from src.rural_reference_utils import (
     build_intermediate_modis_projection,
-    build_rural_fraction_for_subtile
+    build_rural_fraction_for_region
 )
 
 
@@ -96,11 +96,11 @@ def main() -> None:
             projection,
             subtile_id
         )
-        fraction = build_rural_fraction_for_subtile(
+        fraction = build_rural_fraction_for_region(
             config=config,
             modis_projection=projection,
             intermediate_projection=intermediate_projection,
-            subtile_region=region,
+            region=region,
             scale=scale
         )
         asset_id = f"{fraction_collection}/{subtile_id}"

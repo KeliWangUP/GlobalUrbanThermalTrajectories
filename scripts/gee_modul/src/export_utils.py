@@ -373,6 +373,39 @@ def build_yearly_lst_statistics(
     return ee.FeatureCollection(monthly_results).flatten()
 
 
+def build_study_period_lst_statistics(
+    regions: ee.FeatureCollection,
+    config: dict[str, Any],
+    projection: ee.Projection,
+    scale: float,
+    id_field: str,
+    spatial_mask: ee.Image | None = None
+) -> ee.FeatureCollection:
+    """Build all monthly regional summaries for the configured study period."""
+    study_config = config["study"]
+    tile_scale = config["processing"]["tile_scale"]
+    yearly_results = []
+
+    for year in range(
+        study_config["start_year"],
+        study_config["end_year"] + 1
+    ):
+        yearly_results.append(
+            build_yearly_lst_statistics(
+                year=year,
+                regions=regions,
+                config=config,
+                projection=projection,
+                scale=scale,
+                tile_scale=tile_scale,
+                id_field=id_field,
+                spatial_mask=spatial_mask
+            )
+        )
+
+    return ee.FeatureCollection(yearly_results).flatten()
+
+
 def run_annual_exports(
     dataset_name: str,
     regions: ee.FeatureCollection,

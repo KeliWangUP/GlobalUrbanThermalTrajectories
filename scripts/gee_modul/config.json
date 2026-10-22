@@ -124,6 +124,12 @@
     ],
     "city_dataset_name": "city_lst_fixed2024",
     "rural_dataset_name": "rural_lst",
-    "rural_batch_indices": null
+    "rural_batch_indices": null,
+    "rural_city_dataset_name": "rural_lst_by_city",
+    "rural_city_ids": [
+      5249
+    ],
+    "rural_city_start_index": 0,
+    "rural_city_max_tasks_per_run": 5
   }
 }
