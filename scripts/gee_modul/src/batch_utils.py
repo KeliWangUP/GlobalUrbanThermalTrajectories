@@ -169,10 +169,18 @@ def build_modis_subtile_grid(
         first_row = row.multiply(subtile_pixels)
         last_column = first_column.add(subtile_pixels).min(total_columns)
         last_row = first_row.add(subtile_pixels).min(total_rows)
-        x_min = first_column.multiply(scale_x).add(origin_x)
-        x_max = last_column.multiply(scale_x).add(origin_x)
-        y_max = origin_y.subtract(first_row.multiply(scale_y))
-        y_min = origin_y.subtract(last_row.multiply(scale_y))
+        x_min = ee.Number(origin_x).add(
+            first_column.multiply(scale_x)
+        )
+        x_max = ee.Number(origin_x).add(
+            last_column.multiply(scale_x)
+        )
+        y_max = ee.Number(origin_y).subtract(
+            first_row.multiply(scale_y)
+        )
+        y_min = ee.Number(origin_y).subtract(
+            last_row.multiply(scale_y)
+        )
         subtile_id = (
             ee.String("x")
             .cat(column.format("%03d"))
