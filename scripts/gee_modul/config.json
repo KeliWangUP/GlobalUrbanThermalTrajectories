@@ -34,7 +34,8 @@
   "cities": {
     "asset": "users/keliwang/urban_expansion/GHSL_urban_bounds_2024",
     "id_field": "ID_UC_G0",
-    "boundary_definition": "fixed_2024"
+    "boundary_definition": "fixed_2024",
+    "priority_points_asset": "projects/ee-keliwang/assets/cities_over_300k"
   },
 
   "batches": {
@@ -132,6 +133,6 @@
     "rural_city_max_tasks_per_run": 5,
     "rural_city_start_year": 2020,
     "rural_city_end_year": 2020,
-    "rural_city_fraction_max_tasks_per_run": 5
+    "rural_city_fraction_max_tasks_per_run": 3000
   }
 }

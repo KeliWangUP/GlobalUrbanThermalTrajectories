@@ -1,3 +1,5 @@
+from typing import Any
+
 import ee
 
 from src.batch_utils import filter_nonempty_geometries
@@ -10,7 +12,6 @@ from src.export_utils import (
 )
 from src.rural_reference_utils import (
     build_rural_fraction_for_region,
-    resolve_rural_city_ids,
     rural_city_fraction_asset_id
 )
 
@@ -31,6 +32,58 @@ def ensure_image_collection(asset_id: str) -> None:
             "City fraction destination must be an IMAGE_COLLECTION: "
             f"{asset_id}"
         )
+
+
+def get_prioritized_city_ids(
+    config: dict[str, Any],
+    halos: ee.FeatureCollection
+) -> tuple[list[int | str], int, int]:
+    """Put cities intersecting the priority points before all other halos."""
+    id_field = config["cities"]["id_field"]
+    available_ids = (
+        halos
+        .aggregate_array(id_field)
+        .distinct()
+        .sort()
+        .getInfo()
+    )
+    if not available_ids:
+        raise ValueError("The halo asset contains no non-empty city halos.")
+
+    points_asset = config["cities"]["priority_points_asset"]
+    if not asset_exists(points_asset):
+        raise FileNotFoundError(
+            f"Priority city point asset not found: {points_asset}"
+        )
+    points = ee.FeatureCollection(points_asset)
+    polygons = ee.FeatureCollection(config["cities"]["asset"])
+    priority_ids = (
+        polygons
+        .filterBounds(points.geometry())
+        .aggregate_array(id_field)
+        .distinct()
+        .sort()
+        .getInfo()
+    )
+    if not priority_ids:
+        raise ValueError(
+            "No city polygons intersect the configured priority points."
+        )
+
+    available_set = set(available_ids)
+    priority_set = set(priority_ids)
+    prioritized = [
+        city_id
+        for city_id in available_ids
+        if city_id in priority_set
+    ]
+    remaining = [
+        city_id
+        for city_id in available_ids
+        if city_id not in priority_set
+    ]
+    missing_halos = len(priority_set - available_set)
+    return prioritized + remaining, len(priority_set), missing_halos
 
 
 def main() -> None:
@@ -54,7 +107,9 @@ def main() -> None:
         ee.FeatureCollection(halo_asset),
         rural_config["max_error_m"]
     )
-    city_ids = resolve_rural_city_ids(config, halos)
+    city_ids, priority_count, priority_without_halo_count = (
+        get_prioritized_city_ids(config, halos)
+    )
 
     export_config = config["export"]
     max_tasks = export_config["rural_city_fraction_max_tasks_per_run"]
@@ -73,7 +128,10 @@ def main() -> None:
     ]
     selected_city_ids = missing[:max_tasks]
     print(
-        f"[INFO] {len(city_ids)} selected cities; "
+        f"[INFO] {len(city_ids)} halo cities in queue; "
+        f"{priority_count} intersect priority points; "
+        f"{priority_without_halo_count} priority cities have no non-empty "
+        "halo; "
         f"{len(existing)} fraction assets exist; "
         f"{len(missing)} remain; submitting {len(selected_city_ids)} "
         "missing assets."
