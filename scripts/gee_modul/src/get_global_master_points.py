@@ -1,5 +1,10 @@
 import ee
-from src.export_utils import get_modis_reference_grid, initialize_gee, load_config
+from src.export_utils import (
+    asset_exists,
+    get_modis_reference_grid,
+    initialize_gee,
+    load_config
+)
 
 def build_modis_coordinate_image(
     projection: ee.Projection,
@@ -375,27 +380,6 @@ def prepare_sample_points_for_export(
     print("[INFO] Geometry retained: True")
 
     return cleaned
-
-def asset_exists(asset_id: str) -> bool:
-    """
-    Check whether an Earth Engine asset already exists.
-
-    Parameters
-    ----------
-    asset_id : str
-        Earth Engine asset ID.
-
-    Returns
-    -------
-    bool
-        True if the asset exists.
-    """
-
-    try:
-        ee.data.getAsset(asset_id)
-        return True
-    except Exception:
-        return False
 
 def export_sample_points_to_asset(
     points: ee.FeatureCollection,

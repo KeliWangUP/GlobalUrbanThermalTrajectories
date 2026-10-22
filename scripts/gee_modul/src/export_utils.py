@@ -76,6 +76,15 @@ def initialize_gee(config: dict[str, Any]) -> None:
     print(f"[INFO] GEE project: {project_id}")
 
 
+def asset_exists(asset_id: str) -> bool:
+    """Return True when an Earth Engine asset exists and is readable."""
+    try:
+        ee.data.getAsset(asset_id)
+    except ee.EEException:
+        return False
+    return True
+
+
 def get_modis_reference_grid(
     config: dict[str, Any]
 ) -> tuple[ee.Projection, float]:
@@ -250,104 +259,20 @@ def reduce_monthly_lst(
             feature.get("qc")
         )
 
-        output = ee.Dictionary({
+        # Output names must match LST_OUTPUT_FIELDS and QC_OUTPUT_FIELDS.
+        output = {
             id_field: feature.get(id_field),
-
             "year": year,
-            "month": month,
-
-            # ------------------------------
-            # Terra daytime
-            # ------------------------------
-
-            "terra_day_mean":
-                feature.get("terra_day_mean"),
-
-            "terra_day_median":
-                feature.get("terra_day_median"),
-
-            "terra_day_stdDev":
-                feature.get("terra_day_stdDev"),
-
-            "terra_day_count":
-                feature.get("terra_day_count"),
-
-            "terra_day_clear_days_mean":
-                qc.get("terra_day_clear_days"),
-
-            "terra_day_n8day_mean":
-                qc.get("terra_day_n8day"),
-
-            # ------------------------------
-            # Terra nighttime
-            # ------------------------------
-
-            "terra_night_mean":
-                feature.get("terra_night_mean"),
-
-            "terra_night_median":
-                feature.get("terra_night_median"),
-
-            "terra_night_stdDev":
-                feature.get("terra_night_stdDev"),
-
-            "terra_night_count":
-                feature.get("terra_night_count"),
-
-            "terra_night_clear_days_mean":
-                qc.get("terra_night_clear_days"),
-
-            "terra_night_n8day_mean":
-                qc.get("terra_night_n8day"),
-
-            # ------------------------------
-            # Aqua daytime
-            # ------------------------------
-
-            "aqua_day_mean":
-                feature.get("aqua_day_mean"),
-
-            "aqua_day_median":
-                feature.get("aqua_day_median"),
-
-            "aqua_day_stdDev":
-                feature.get("aqua_day_stdDev"),
-
-            "aqua_day_count":
-                feature.get("aqua_day_count"),
-
-            "aqua_day_clear_days_mean":
-                qc.get("aqua_day_clear_days"),
-
-            "aqua_day_n8day_mean":
-                qc.get("aqua_day_n8day"),
-
-            # ------------------------------
-            # Aqua nighttime
-            # ------------------------------
-
-            "aqua_night_mean":
-                feature.get("aqua_night_mean"),
-
-            "aqua_night_median":
-                feature.get("aqua_night_median"),
-
-            "aqua_night_stdDev":
-                feature.get("aqua_night_stdDev"),
-
-            "aqua_night_count":
-                feature.get("aqua_night_count"),
-
-            "aqua_night_clear_days_mean":
-                qc.get("aqua_night_clear_days"),
-
-            "aqua_night_n8day_mean":
-                qc.get("aqua_night_n8day")
-        })
+            "month": month
+        }
+        for field in LST_OUTPUT_FIELDS:
+            output[field] = feature.get(field)
+        for qc_band in QC_BANDS:
+            output[f"{qc_band}_mean"] = qc.get(qc_band)
 
         return ee.Feature(
             None,
-            output
+            ee.Dictionary(output)
         )
 
     return joined.map(

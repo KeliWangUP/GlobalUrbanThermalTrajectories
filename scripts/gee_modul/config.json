@@ -5,7 +5,7 @@
   },
 
   "study": {
-    "start_year": 2021,
+    "start_year": 2000,
     "end_year": 2025
   },
 
@@ -28,21 +28,19 @@
     "collection": "MODIS/061/MOD11A1",
     "band": "LST_Day_1km",
     "reference_date": "2001-01-01",
-    "pixel_id_prefix": "MODIS",
-    "tile_grid": {
-      "horizontal_tiles": 36,
-      "vertical_tiles": 18,
-      "pixels_per_tile": 1200,
-      "chunk_size_pixels": 200,
-      "global_x_min_m": -20015109.354,
-      "global_y_max_m": 10007554.677
-    }
+    "pixel_id_prefix": "MODIS"
   },
 
   "cities": {
     "asset": "users/keliwang/urban_expansion/GHSL_urban_bounds_2024",
     "id_field": "ID_UC_G0",
     "boundary_definition": "fixed_2024"
+  },
+
+  "batches": {
+    "count": 20,
+    "folder_asset": "projects/ee-keliwangpy/assets/GlobalUrbanThermalTrajectories/urban_bounds_batches_fixed2024_v0_1",
+    "asset_name_prefix": "urban_bounds_batch"
   },
 
   "modis": {
@@ -100,14 +98,7 @@
     "dem_collection": "COPERNICUS/DEM/GLO30_2024_1",
 
     "minimum_rural_fraction_per_modis_pixel": 0.8,
-    "max_input_pixels_per_modis_pixel": 32768,
-    "max_chunk_exports_per_run": 10,
-
-    "static_assets": {
-      "fraction_collection_asset": "projects/ee-keliwangpy/assets/GlobalUrbanThermalTrajectories/rural_fraction_modis_fixed2024_v0_1",
-      "halos_asset": "projects/ee-keliwangpy/assets/GlobalUrbanThermalTrajectories/rural_halos_fixed2024_v0_1",
-      "test_fraction_asset": "projects/ee-keliwangpy/assets/GlobalUrbanThermalTrajectories/rural_fraction_chunk_test_5249_v0_2"
-    }
+    "max_input_pixels_per_modis_pixel": 32768
   },
 
   "export": {
@@ -121,6 +112,7 @@
       "rural"
     ],
     "city_dataset_name": "city_lst_fixed2024",
-    "rural_dataset_name": "rural_lst"
+    "rural_dataset_name": "rural_lst",
+    "rural_batch_indices": null
   }
 }

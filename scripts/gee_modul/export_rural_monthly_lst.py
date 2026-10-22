@@ -2,63 +2,52 @@ from typing import Any
 
 import ee
 
+from src.batch_utils import (
+    load_city_batch,
+    resolve_batch_indices,
+    verify_city_batches
+)
 from src.export_utils import run_annual_exports
+from src.rural_reference_utils import (
+    build_all_rural_halos,
+    build_rural_modis_mask
+)
 
 
-def load_rural_inputs(
+def build_rural_halos(
     config: dict[str, Any],
-    city_id: int | None = None
-) -> tuple[ee.FeatureCollection, ee.Image]:
-    """Load the persistent rural assets used by temporal MODIS processing."""
+    cities: ee.FeatureCollection
+) -> ee.FeatureCollection:
+    """Build rural halos for the given cities."""
     rural_config = config["rural"]
-    static_assets = rural_config["static_assets"]
-    id_field = config["cities"]["id_field"]
-
-    fraction_collection = ee.ImageCollection(
-        static_assets["fraction_collection_asset"]
+    return build_all_rural_halos(
+        cities=cities,
+        inner_buffer_m=rural_config["inner_buffer_m"],
+        outer_buffer_m=rural_config["outer_buffer_m"],
+        city_id_field=config["cities"]["id_field"],
+        max_error_m=rural_config["max_error_m"]
     )
-    if fraction_collection.size().getInfo() == 0:
-        raise ValueError(
-            "Rural fraction ImageCollection contains no tiles: "
-            f"{static_assets['fraction_collection_asset']}"
-        )
-    fraction = fraction_collection.mosaic()
-    band_names = fraction.bandNames().getInfo()
-    if "rural_fraction" not in band_names:
-        raise ValueError(
-            "Rural fraction asset is missing the 'rural_fraction' band: "
-            f"{static_assets['fraction_collection_asset']}"
-        )
 
-    rural_halos = ee.FeatureCollection(
-        static_assets["halos_asset"]
-    )
-    if city_id is not None:
-        rural_halos = rural_halos.filter(
-            ee.Filter.eq(id_field, city_id)
-        )
-    if rural_halos.size().getInfo() == 0:
-        if city_id is None:
-            message = (
-                "Rural halo asset contains no features: "
-                f"{static_assets['halos_asset']}"
-            )
-        else:
-            message = (
-                "Rural halo asset contains no feature for the requested "
-                f"city ID {city_id}."
-            )
-        raise ValueError(message)
 
-    rural_modis_mask = (
-        fraction
-        .select("rural_fraction")
-        .gte(
+def build_rural_mask(
+    config: dict[str, Any],
+    projection: ee.Projection
+) -> ee.Image:
+    """Build the MODIS-grid rural mask; exclusion uses all cities."""
+    rural_config = config["rural"]
+    return build_rural_modis_mask(
+        cities=ee.FeatureCollection(config["cities"]["asset"]),
+        urban_mask_source=ee.Image(rural_config["gaia_asset"]),
+        dem_mask_source=ee.ImageCollection(rural_config["dem_collection"]),
+        modis_projection=projection,
+        inner_buffer_m=rural_config["inner_buffer_m"],
+        max_error_m=rural_config["max_error_m"],
+        max_slope_deg=rural_config["max_slope_deg"],
+        minimum_rural_fraction=(
             rural_config["minimum_rural_fraction_per_modis_pixel"]
-        )
-        .rename("rural_modis_mask")
+        ),
+        max_input_pixels=rural_config["max_input_pixels_per_modis_pixel"]
     )
-    return rural_halos, rural_modis_mask
 
 
 def export_rural(
@@ -66,13 +55,30 @@ def export_rural(
     projection: ee.Projection,
     scale: float
 ) -> None:
-    """Export annual LST statistics for rural halo regions."""
-    rural_halos, rural_modis_mask = load_rural_inputs(config)
-    run_annual_exports(
-        dataset_name=config["export"]["rural_dataset_name"],
-        regions=rural_halos,
-        config=config,
-        projection=projection,
-        scale=scale,
-        spatial_mask=rural_modis_mask
+    """Submit one annual CSV export per selected city batch and year."""
+    batch_indices = resolve_batch_indices(config)
+    verify_city_batches(config, batch_indices)
+
+    rural_mask = build_rural_mask(config, projection)
+    dataset_name = config["export"]["rural_dataset_name"]
+
+    submitted = 0
+    for batch_index in batch_indices:
+        print(f"\n[INFO] Rural batch {batch_index:02d}")
+        tasks = run_annual_exports(
+            dataset_name=f"{dataset_name}_batch{batch_index:02d}",
+            regions=build_rural_halos(
+                config,
+                load_city_batch(config, batch_index)
+            ),
+            config=config,
+            projection=projection,
+            scale=scale,
+            spatial_mask=rural_mask
+        )
+        submitted += len(tasks)
+
+    print(
+        f"\n[INFO] Submitted {submitted} rural export tasks for "
+        f"{len(batch_indices)} batches."
     )
