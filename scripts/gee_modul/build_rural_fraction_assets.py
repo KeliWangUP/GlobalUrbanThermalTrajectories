@@ -1,6 +1,7 @@
 import ee
 
 from src.batch_utils import (
+    filter_nonempty_geometries,
     get_occupied_subtile_ids,
     get_subtile_geometry
 )
@@ -55,7 +56,10 @@ def main() -> None:
         modis_projection=projection,
         scale_divisor=static_config["intermediate_scale_divisor"]
     )
-    halos = ee.FeatureCollection(halo_asset)
+    halos = filter_nonempty_geometries(
+        ee.FeatureCollection(halo_asset),
+        rural_config["max_error_m"]
+    )
     subtile_ids = get_occupied_subtile_ids(
         config,
         projection,

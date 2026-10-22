@@ -205,6 +205,20 @@ def build_modis_subtile_grid(
     return ee.FeatureCollection(ee.List(nested).flatten())
 
 
+def filter_nonempty_geometries(
+    features: ee.FeatureCollection,
+    max_error_m: int
+) -> ee.FeatureCollection:
+    """Remove features whose geometry has no area."""
+    with_area = ee.FeatureCollection(features).map(
+        lambda feature: ee.Feature(feature).set(
+            "_geometry_area_m2",
+            ee.Feature(feature).geometry().area(max_error_m)
+        )
+    )
+    return with_area.filter(ee.Filter.gt("_geometry_area_m2", 0))
+
+
 def get_occupied_subtile_ids(
     config: dict[str, Any],
     projection: ee.Projection,

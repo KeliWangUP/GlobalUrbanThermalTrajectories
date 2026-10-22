@@ -4,6 +4,7 @@ import ee
 
 from src.batch_utils import (
     TILE_ID_PROPERTY,
+    filter_nonempty_geometries,
     get_occupied_subtile_ids,
     get_tile_city_counts,
     resolve_batch_indices
@@ -22,8 +23,14 @@ def load_rural_halos(
 ) -> ee.FeatureCollection:
     """Load the precomputed rural halos assigned to one MODIS tile."""
     return (
-        ee.FeatureCollection(config["rural"]["static_assets"]["halo_asset"])
-        .filter(ee.Filter.eq(TILE_ID_PROPERTY, tile_id))
+        filter_nonempty_geometries(
+            ee.FeatureCollection(
+                config["rural"]["static_assets"]["halo_asset"]
+            ).filter(
+                ee.Filter.eq(TILE_ID_PROPERTY, tile_id)
+            ),
+            config["rural"]["max_error_m"]
+        )
     )
 
 
@@ -108,7 +115,10 @@ def export_rural(
             "build_rural_halos_asset.py first."
         )
 
-    halos = ee.FeatureCollection(halo_asset)
+    halos = filter_nonempty_geometries(
+        ee.FeatureCollection(halo_asset),
+        config["rural"]["max_error_m"]
+    )
     tile_ids = list(get_tile_city_counts(halos))
     batch_indices = resolve_batch_indices(config, tile_ids)
     selected_tile_ids = [tile_ids[index] for index in batch_indices]

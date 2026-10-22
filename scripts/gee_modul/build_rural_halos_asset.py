@@ -1,6 +1,9 @@
 import ee
 
-from src.batch_utils import assign_cities_to_modis_tiles
+from src.batch_utils import (
+    assign_cities_to_modis_tiles,
+    filter_nonempty_geometries
+)
 from src.export_utils import (
     asset_exists,
     get_modis_reference_grid,
@@ -51,6 +54,10 @@ def main() -> None:
         outer_buffer_m=rural_config["outer_buffer_m"],
         city_id_field=config["cities"]["id_field"],
         max_error_m=rural_config["max_error_m"]
+    )
+    halos = filter_nonempty_geometries(
+        halos,
+        rural_config["max_error_m"]
     )
     task = ee.batch.Export.table.toAsset(
         collection=halos,

@@ -5,6 +5,7 @@ from export_rural_monthly_lst import (
     verify_static_rural_assets
 )
 from src.batch_utils import (
+    filter_nonempty_geometries,
     get_tile_city_counts,
     TILE_ID_PROPERTY
 )
@@ -41,7 +42,10 @@ def main() -> None:
             f"Rural halo asset not found: {halo_asset}. Run "
             "build_rural_halos_asset.py first."
         )
-    all_halos = ee.FeatureCollection(halo_asset)
+    all_halos = filter_nonempty_geometries(
+        ee.FeatureCollection(halo_asset),
+        config["rural"]["max_error_m"]
+    )
     rural_halos = select_single_city(
         all_halos,
         id_field,
