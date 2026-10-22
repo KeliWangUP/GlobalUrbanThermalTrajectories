@@ -21,7 +21,8 @@
 
   "test": {
     "city_id": 5249,
-    "year": 2020
+    "year": 2020,
+    "max_halo_extent_pixels": 300
   },
 
   "reference_grid": {
