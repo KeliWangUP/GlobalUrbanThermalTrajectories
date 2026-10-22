@@ -130,6 +130,8 @@
     ],
     "rural_city_start_index": 0,
     "rural_city_max_tasks_per_run": 5,
+    "rural_city_start_year": 2020,
+    "rural_city_end_year": 2020,
     "rural_city_fraction_max_tasks_per_run": 5
   }
 }

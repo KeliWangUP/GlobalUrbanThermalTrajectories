@@ -379,17 +379,32 @@ def build_study_period_lst_statistics(
     projection: ee.Projection,
     scale: float,
     id_field: str,
-    spatial_mask: ee.Image | None = None
+    spatial_mask: ee.Image | None = None,
+    start_year: int | None = None,
+    end_year: int | None = None
 ) -> ee.FeatureCollection:
     """Build all monthly regional summaries for the configured study period."""
     study_config = config["study"]
     tile_scale = config["processing"]["tile_scale"]
+    if start_year is None:
+        start_year = study_config["start_year"]
+    if end_year is None:
+        end_year = study_config["end_year"]
+    if (
+        type(start_year) is not int
+        or type(end_year) is not int
+        or start_year > end_year
+        or start_year < study_config["start_year"]
+        or end_year > study_config["end_year"]
+    ):
+        raise ValueError(
+            "The requested city export year range must be an ordered "
+            "integer range within study.start_year and study.end_year."
+        )
+
     yearly_results = []
 
-    for year in range(
-        study_config["start_year"],
-        study_config["end_year"] + 1
-    ):
+    for year in range(start_year, end_year + 1):
         yearly_results.append(
             build_yearly_lst_statistics(
                 year=year,

@@ -68,8 +68,8 @@ def main() -> None:
             + ", ".join(missing_fraction_assets[:5])
         )
 
-    end_year = config["study"]["end_year"]
-    start_year = config["study"]["start_year"]
+    start_year = export_config["rural_city_start_year"]
+    end_year = export_config["rural_city_end_year"]
     dataset_name = export_config["rural_city_dataset_name"]
     version = config["project"]["version"]
     id_field = config["cities"]["id_field"]
@@ -98,7 +98,9 @@ def main() -> None:
             projection=projection,
             scale=scale,
             id_field=id_field,
-            spatial_mask=rural_mask
+            spatial_mask=rural_mask,
+            start_year=start_year,
+            end_year=end_year
         )
 
         city_token = str(city_id)
