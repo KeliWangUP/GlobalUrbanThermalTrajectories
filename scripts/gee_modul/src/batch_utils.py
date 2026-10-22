@@ -53,7 +53,10 @@ def build_modis_tile_grid(
 ) -> ee.FeatureCollection:
     """Build the configured MODIS sinusoidal tile grid."""
     tile_pixels, columns, rows = _validate_tile_grid(config)
-    transform, _ = _grid_transform(projection)
+    transform, crs = _grid_transform(projection)
+    # Geometry coordinates are map units; the raster affine transform is
+    # used to calculate bounds, not attached to the geometry CRS.
+    geometry_projection = ee.Projection(crs)
     tile_width = transform[0] * tile_pixels
     tile_height = -transform[4] * tile_pixels
     origin_x = transform[2]
@@ -69,7 +72,7 @@ def build_modis_tile_grid(
             tile_id = f"h{horizontal:02d}v{vertical:02d}"
             geometry = ee.Geometry.Rectangle(
                 [x_min, y_min, x_max, y_max],
-                proj=projection,
+                proj=geometry_projection,
                 geodesic=False
             )
             tiles.append(
@@ -137,7 +140,8 @@ def build_modis_subtile_grid(
 ) -> ee.FeatureCollection:
     """Build a server-side grid of MODIS-aligned processing subtiles."""
     tile_pixels, tile_columns, tile_rows = _validate_tile_grid(config)
-    transform, _ = _grid_transform(projection)
+    transform, crs = _grid_transform(projection)
+    geometry_projection = ee.Projection(crs)
     subtile_pixels = config["rural"]["static_assets"]["subtile_pixels"]
     if type(subtile_pixels) is not int or subtile_pixels < 1:
         raise ValueError(
@@ -177,7 +181,7 @@ def build_modis_subtile_grid(
         )
         geometry = ee.Geometry.Rectangle(
             [x_min, y_min, x_max, y_max],
-            proj=projection,
+            proj=geometry_projection,
             geodesic=False
         )
         return ee.Feature(
@@ -243,7 +247,8 @@ def get_subtile_geometry(
         raise ValueError(f"Invalid MODIS subtile ID: {subtile_id}")
 
     tile_pixels, tile_columns, tile_rows = _validate_tile_grid(config)
-    transform, _ = _grid_transform(projection)
+    transform, crs = _grid_transform(projection)
+    geometry_projection = ee.Projection(crs)
     subtile_pixels = config["rural"]["static_assets"]["subtile_pixels"]
     total_columns = tile_pixels * tile_columns
     total_rows = tile_pixels * tile_rows
@@ -267,7 +272,7 @@ def get_subtile_geometry(
             origin_x + last_column * scale_x,
             origin_y - first_row * scale_y
         ],
-        proj=projection,
+        proj=geometry_projection,
         geodesic=False
     )
 
