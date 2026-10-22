@@ -82,6 +82,7 @@ def main() -> None:
             "rural.static_assets.max_asset_tasks_per_run must be a "
             "positive integer."
         )
+    subtile_pixels = static_config["subtile_pixels"]
 
     print(
         f"[INFO] {len(subtile_ids)} occupied MODIS subtiles; "
@@ -105,7 +106,10 @@ def main() -> None:
         asset_id = f"{fraction_collection}/{subtile_id}"
         task = ee.batch.Export.image.toAsset(
             image=fraction,
-            description=f"rural_fraction_{config['project']['version']}_{subtile_id}",
+            description=(
+                f"rural_fraction_{config['project']['version']}_"
+                f"s{subtile_pixels}_{subtile_id}"
+            ),
             assetId=asset_id,
             region=region,
             crs=projection_info["crs"],
