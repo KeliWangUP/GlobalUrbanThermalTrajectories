@@ -108,7 +108,6 @@
     "folder": "GlobalUrbanThermalTrajectories",
     "partition": "year",
     "targets": [
-      "city",
       "rural"
     ],
     "city_dataset_name": "city_lst_fixed2024",

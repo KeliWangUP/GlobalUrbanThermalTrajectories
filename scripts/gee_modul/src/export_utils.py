@@ -192,6 +192,14 @@ def reduce_monthly_lst(
     # 1. LST statistics
     # ==================================================
 
+    # Halo geometries are large. Drop them after reduction so the join
+    # does not embed each geometry twice in an intermediate object.
+    def _drop_geometry(feature):
+        return ee.Feature(
+            None,
+            ee.Feature(feature).toDictionary()
+        )
+
     lst_stats = (
         image
         .select(LST_BANDS)
@@ -202,6 +210,7 @@ def reduce_monthly_lst(
             scale=scale,
             tileScale=tile_scale
         )
+        .map(_drop_geometry)
     )
 
     # ==================================================
@@ -218,6 +227,7 @@ def reduce_monthly_lst(
             scale=scale,
             tileScale=tile_scale
         )
+        .map(_drop_geometry)
     )
 
     # With ee.Reducer.mean() alone, Earth Engine generally
