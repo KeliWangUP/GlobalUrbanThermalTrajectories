@@ -134,77 +134,6 @@ def get_tile_city_counts(
     }
 
 
-def build_modis_subtile_grid(
-    config: dict[str, Any],
-    projection: ee.Projection
-) -> ee.FeatureCollection:
-    """Build a server-side grid of MODIS-aligned processing subtiles."""
-    tile_pixels, tile_columns, tile_rows = _validate_tile_grid(config)
-    transform, crs = _grid_transform(projection)
-    geometry_projection = ee.Projection(crs)
-    subtile_pixels = config["rural"]["static_assets"]["subtile_pixels"]
-    if type(subtile_pixels) is not int or subtile_pixels < 1:
-        raise ValueError(
-            "rural.static_assets.subtile_pixels must be a positive integer."
-        )
-
-    total_columns = tile_pixels * tile_columns
-    total_rows = tile_pixels * tile_rows
-    column_count = (total_columns + subtile_pixels - 1) // subtile_pixels
-    row_count = (total_rows + subtile_pixels - 1) // subtile_pixels
-    if column_count > 1000 or row_count > 1000:
-        raise ValueError(
-            "The configured MODIS subtile grid exceeds the supported "
-            "three-digit subtile IDs."
-        )
-    origin_x = transform[2]
-    origin_y = transform[5]
-    scale_x = transform[0]
-    scale_y = -transform[4]
-
-    def _make_subtile(column: Any, row: Any) -> ee.Feature:
-        column = ee.Number(column)
-        row = ee.Number(row)
-        first_column = column.multiply(subtile_pixels)
-        first_row = row.multiply(subtile_pixels)
-        last_column = first_column.add(subtile_pixels).min(total_columns)
-        last_row = first_row.add(subtile_pixels).min(total_rows)
-        x_min = ee.Number(origin_x).add(
-            first_column.multiply(scale_x)
-        )
-        x_max = ee.Number(origin_x).add(
-            last_column.multiply(scale_x)
-        )
-        y_max = ee.Number(origin_y).subtract(
-            first_row.multiply(scale_y)
-        )
-        y_min = ee.Number(origin_y).subtract(
-            last_row.multiply(scale_y)
-        )
-        subtile_id = (
-            ee.String("x")
-            .cat(column.format("%03d"))
-            .cat("y")
-            .cat(row.format("%03d"))
-        )
-        geometry = ee.Geometry.Rectangle(
-            [x_min, y_min, x_max, y_max],
-            proj=geometry_projection,
-            geodesic=False
-        )
-        return ee.Feature(
-            geometry,
-            {SUBTILE_ID_PROPERTY: subtile_id}
-        )
-
-    nested = ee.List.sequence(0, column_count - 1).map(
-        lambda column: ee.List.sequence(0, row_count - 1).map(
-            lambda row: _make_subtile(column, row)
-        )
-    )
-    return ee.FeatureCollection(ee.List(nested).flatten())
-
-
 def filter_nonempty_geometries(
     features: ee.FeatureCollection,
     max_error_m: int
@@ -225,28 +154,102 @@ def get_occupied_subtile_ids(
     rural_halos: ee.FeatureCollection
 ) -> list[str]:
     """Find MODIS subtiles intersecting at least one non-empty rural halo."""
-    subtiles = build_modis_subtile_grid(config, projection)
-    matches = ee.Join.saveFirst(
-        matchKey="_matched_rural_halo"
-    ).apply(
-        primary=subtiles,
-        secondary=rural_halos,
-        condition=ee.Filter.intersects(
-            leftField=".geo",
-            rightField=".geo",
-            maxError=config["rural"]["max_error_m"]
+    tile_pixels, tile_columns, tile_rows = _validate_tile_grid(config)
+    transform, crs = _grid_transform(projection)
+    subtile_pixels = config["rural"]["static_assets"]["subtile_pixels"]
+    if type(subtile_pixels) is not int or subtile_pixels < 1:
+        raise ValueError(
+            "rural.static_assets.subtile_pixels must be a positive integer."
+        )
+
+    total_columns = tile_pixels * tile_columns
+    total_rows = tile_pixels * tile_rows
+    column_count = (total_columns + subtile_pixels - 1) // subtile_pixels
+    row_count = (total_rows + subtile_pixels - 1) // subtile_pixels
+    if column_count > 1000 or row_count > 1000:
+        raise ValueError(
+            "The configured MODIS subtile grid exceeds the supported "
+            "three-digit subtile IDs."
+        )
+
+    subtile_width = transform[0] * subtile_pixels
+    subtile_height = -transform[4] * subtile_pixels
+    origin_x = transform[2]
+    origin_y = transform[5]
+    subtile_projection = ee.Projection(
+        crs,
+        [
+            subtile_width,
+            0,
+            origin_x,
+            0,
+            -subtile_height,
+            origin_y
+        ]
+    )
+    geometry_projection = ee.Projection(crs)
+    max_error_m = config["rural"]["max_error_m"]
+
+    def _add_subtile_id(cell: ee.Feature) -> ee.Feature:
+        cell = ee.Feature(cell)
+        center = ee.List(
+            cell.geometry()
+            .centroid(max_error_m, geometry_projection)
+            .coordinates()
+        )
+        column = (
+            ee.Number(center.get(0))
+            .subtract(origin_x)
+            .divide(subtile_width)
+            .floor()
+            .toInt()
+        )
+        row = (
+            ee.Number(origin_y)
+            .subtract(ee.Number(center.get(1)))
+            .divide(subtile_height)
+            .floor()
+            .toInt()
+        )
+        subtile_id = (
+            ee.String("x")
+            .cat(column.format("%03d"))
+            .cat("y")
+            .cat(row.format("%03d"))
+        )
+        return cell.set({
+            SUBTILE_ID_PROPERTY: subtile_id,
+            "_subtile_column": column,
+            "_subtile_row": row
+        })
+
+    def _ids_for_halo(feature: ee.Feature) -> ee.List:
+        cells = ee.FeatureCollection(
+            ee.Feature(feature)
+            .geometry()
+            .coveringGrid(subtile_projection)
+        )
+        indexed_cells = cells.map(_add_subtile_id).filter(
+            ee.Filter.gte("_subtile_column", 0)
+        ).filter(
+            ee.Filter.lt("_subtile_column", column_count)
+        ).filter(
+            ee.Filter.gte("_subtile_row", 0)
+        ).filter(
+            ee.Filter.lt("_subtile_row", row_count)
+        )
+        return indexed_cells.aggregate_array(SUBTILE_ID_PROPERTY)
+
+    halos_with_subtiles = ee.FeatureCollection(rural_halos).map(
+        lambda feature: ee.Feature(feature).set(
+            "_occupied_subtile_ids",
+            _ids_for_halo(ee.Feature(feature))
         )
     )
-    occupied = ee.FeatureCollection(matches).filter(
-        ee.Filter.notNull(["_matched_rural_halo"])
-    ).select(
-        [SUBTILE_ID_PROPERTY],
-        None,
-        False
-    )
     return (
-        occupied
-        .aggregate_array(SUBTILE_ID_PROPERTY)
+        halos_with_subtiles
+        .aggregate_array("_occupied_subtile_ids")
+        .flatten()
         .distinct()
         .sort()
         .getInfo()
