@@ -1,7 +1,7 @@
 {
   "project": {
     "gee_project": "ee-keliwang",
-    "version": "v0.1"
+    "version": "v0.3"
   },
 
   "study": {
@@ -21,8 +21,7 @@
 
   "test": {
     "city_id": 5249,
-    "year": 2020,
-    "max_halo_extent_pixels": 300
+    "year": 2020
   },
 
   "reference_grid": {
@@ -39,9 +38,9 @@
   },
 
   "batches": {
-    "count": 20,
-    "folder_asset": "projects/ee-keliwangpy/assets/GlobalUrbanThermalTrajectories/urban_bounds_batches_fixed2024_v0_1",
-    "asset_name_prefix": "urban_bounds_batch"
+    "tile_pixels": 1200,
+    "tile_columns": 36,
+    "tile_rows": 18
   },
 
   "modis": {
@@ -99,7 +98,19 @@
     "dem_collection": "COPERNICUS/DEM/GLO30_2024_1",
 
     "minimum_rural_fraction_per_modis_pixel": 0.8,
-    "max_input_pixels_per_modis_pixel": 32768
+    "static_assets": {
+      "halo_asset": "projects/ee-keliwangpy/assets/GlobalUrbanThermalTrajectories/rural_halos_fixed2024_v0_3",
+      "halo_asset_description": "rural_halos_fixed2024_v0_3",
+      "fraction_collection_asset": "projects/ee-keliwangpy/assets/GlobalUrbanThermalTrajectories/rural_fraction_fixed2024_v0_3",
+      "subtile_pixels": 256,
+      "processing_buffer_modis_pixels": 2,
+      "intermediate_scale_divisor": 10,
+      "max_source_pixels_per_intermediate_pixel": 32768,
+      "max_intermediate_pixels_per_modis_pixel": 256,
+      "fraction_value_scale": 10000,
+      "export_max_pixels": 100000000,
+      "max_asset_tasks_per_run": 10
+    }
   },
 
   "export": {

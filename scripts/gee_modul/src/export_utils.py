@@ -85,6 +85,27 @@ def asset_exists(asset_id: str) -> bool:
     return True
 
 
+def list_image_asset_names(collection_asset: str) -> set[str]:
+    """List child asset names from an Earth Engine ImageCollection."""
+    names = set()
+    page_token = None
+    while True:
+        params = {
+            "parent": collection_asset,
+            "pageSize": 1000
+        }
+        if page_token:
+            params["pageToken"] = page_token
+        response = ee.data.listAssets(params)
+        names.update(
+            asset["name"].rsplit("/", 1)[-1]
+            for asset in response.get("assets", [])
+        )
+        page_token = response.get("nextPageToken")
+        if not page_token:
+            return names
+
+
 def get_modis_reference_grid(
     config: dict[str, Any]
 ) -> tuple[ee.Projection, float]:

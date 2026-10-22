@@ -1,23 +1,43 @@
+from typing import Any
+
 import ee
+
+from src.batch_utils import TILE_ID_PROPERTY
+
+RURAL_FRACTION_BAND = "rural_fraction_scaled"
 
 
 def build_rural_halo(
     feature: ee.Feature,
+    all_cities: ee.FeatureCollection,
     inner_buffer_m: int,
     outer_buffer_m: int,
     city_id_field: str,
     max_error_m: int
 ) -> ee.Feature:
-    """Build a ring-shaped rural search area around one city."""
-
+    """Build a city halo excluding every nearby city's 2 km influence area."""
+    feature = ee.Feature(feature)
     geometry = feature.geometry()
     inner = geometry.buffer(inner_buffer_m, max_error_m)
     outer = geometry.buffer(outer_buffer_m, max_error_m)
-    halo = outer.difference(inner, max_error_m)
+    nearby_cities = all_cities.filterBounds(
+        outer.buffer(inner_buffer_m, max_error_m)
+    )
+    excluded_area = nearby_cities.map(
+        lambda city: ee.Feature(city).buffer(
+            inner_buffer_m,
+            max_error_m
+        )
+    ).geometry(max_error_m)
+    rural_halo = (
+        outer
+        .difference(inner, max_error_m)
+        .difference(excluded_area, max_error_m)
+    )
 
     return (
-        ee.Feature(halo)
-        .copyProperties(feature, [city_id_field])
+        ee.Feature(rural_halo)
+        .copyProperties(feature, [city_id_field, TILE_ID_PROPERTY])
     )
 
 
@@ -28,11 +48,11 @@ def build_all_rural_halos(
     city_id_field: str,
     max_error_m: int
 ) -> ee.FeatureCollection:
-    """Build one rural halo per city."""
-
+    """Build all city halos, subtracting overlapping city buffers."""
     return cities.map(
         lambda feature: build_rural_halo(
-            feature,
+            feature=feature,
+            all_cities=cities,
             inner_buffer_m=inner_buffer_m,
             outer_buffer_m=outer_buffer_m,
             city_id_field=city_id_field,
@@ -41,53 +61,47 @@ def build_all_rural_halos(
     )
 
 
-def build_global_urban_exclusion_mask(
-    cities: ee.FeatureCollection,
-    buffer_m: int,
-    max_error_m: int,
-    reference_projection: ee.Projection
-) -> ee.Image:
-    """
-    Create an exclusion mask around all study cities.
+def build_intermediate_modis_projection(
+    modis_projection: ee.Projection,
+    scale_divisor: int
+) -> ee.Projection:
+    """Create a MODIS-aligned projection with finer, nested pixels."""
+    if type(scale_divisor) is not int or scale_divisor < 1:
+        raise ValueError("Intermediate scale divisor must be a positive integer.")
 
-    1 = excluded
-    0 = potentially available
+    projection_info = modis_projection.getInfo()
+    transform = projection_info["transform"]
+    if (
+        len(transform) != 6
+        or transform[0] <= 0
+        or transform[4] >= 0
+        or transform[1] != 0
+        or transform[3] != 0
+    ):
+        raise ValueError(
+            "MODIS projection must provide an axis-aligned affine transform."
+        )
 
-    Pass every city, not only the cities of one export batch, so rural
-    pixels near other cities stay excluded.
-    """
-
-    buffered = cities.map(
-        lambda feature: feature.buffer(buffer_m, max_error_m)
+    intermediate_transform = [
+        transform[0] / scale_divisor,
+        0,
+        transform[2],
+        0,
+        transform[4] / scale_divisor,
+        transform[5]
+    ]
+    return ee.Projection(
+        projection_info["crs"],
+        intermediate_transform
     )
 
-    return (
-        ee.Image.constant(0)
-        .byte()
-        .paint(buffered, 1)
-        .rename("urban_exclusion")
-        .setDefaultProjection(reference_projection)
-    )
 
-
-def build_global_stable_rural_binary(
+def build_local_rural_eligibility(
     urban_mask_source: ee.Image,
     dem_mask_source: ee.ImageCollection,
-    global_exclusion_mask: ee.Image,
     max_slope_deg: float
 ) -> ee.Image:
-    """
-    Create a fine-resolution binary rural eligibility image.
-
-    1 = valid rural land
-    0 = unsuitable land
-
-    Criteria: not impervious in GAIA, slope below the threshold, not
-    water, and outside all city exclusion buffers. The image is unmasked
-    so that unsuitable pixels contribute zeros to the MODIS-pixel fraction.
-    """
-
-    # GAIA transition pixels have values 1-34; masked pixels never changed.
+    """Build fine-grid suitability from GAIA and GLO30 only."""
     stable_nonurban = (
         urban_mask_source
         .select("change_year_index")
@@ -100,7 +114,6 @@ def build_global_stable_rural_binary(
         .select("DEM")
         .projection()
     )
-
     dem = (
         dem_mask_source
         .select("DEM")
@@ -108,7 +121,6 @@ def build_global_stable_rural_binary(
         .setDefaultProjection(dem_projection)
     )
     slope_ok = ee.Terrain.slope(dem).lt(max_slope_deg)
-
     non_water = (
         dem_mask_source
         .select("WBM")
@@ -117,82 +129,75 @@ def build_global_stable_rural_binary(
         .eq(0)
     )
 
-    outside_city_influence = global_exclusion_mask.eq(0)
-
     return (
         stable_nonurban
         .And(slope_ok)
         .And(non_water)
-        .And(outside_city_influence)
         .unmask(0)
-        .rename("rural_binary")
+        .rename("rural_eligibility")
         .byte()
     )
 
 
-def aggregate_rural_mask_to_modis(
-    rural_binary: ee.Image,
+def build_rural_fraction_for_subtile(
+    config: dict[str, Any],
     modis_projection: ee.Projection,
-    minimum_rural_fraction: float,
-    max_input_pixels: int
+    intermediate_projection: ee.Projection,
+    subtile_region: ee.Geometry,
+    scale: float
 ) -> ee.Image:
-    """
-    Convert fine-resolution rural suitability to a MODIS-grid mask.
+    """Aggregate fine suitability through a local nested MODIS grid."""
+    rural_config = config["rural"]
+    static_config = rural_config["static_assets"]
+    max_error_m = rural_config["max_error_m"]
+    processing_region = subtile_region.buffer(
+        static_config["processing_buffer_modis_pixels"] * scale,
+        max_error_m
+    )
 
-    A MODIS pixel is kept when its rural fraction reaches the threshold.
-    max_input_pixels must cover the largest source-pixel count that any
-    MODIS pixel needs under the source and MODIS projections.
-    """
-
-    rural_fraction = (
-        rural_binary
+    fine_eligibility = (
+        build_local_rural_eligibility(
+            urban_mask_source=ee.Image(rural_config["gaia_asset"]),
+            dem_mask_source=ee.ImageCollection(
+                rural_config["dem_collection"]
+            ),
+            max_slope_deg=rural_config["max_slope_deg"]
+        )
+        .clip(processing_region)
+    )
+    intermediate_fraction = (
+        fine_eligibility
         .toFloat()
         .reduceResolution(
             reducer=ee.Reducer.mean(),
-            maxPixels=max_input_pixels
+            maxPixels=static_config[
+                "max_source_pixels_per_intermediate_pixel"
+            ]
+        )
+        .reproject(crs=intermediate_projection)
+        .clip(processing_region)
+    )
+    modis_fraction = (
+        intermediate_fraction
+        .reduceResolution(
+            reducer=ee.Reducer.mean(),
+            maxPixels=static_config[
+                "max_intermediate_pixels_per_modis_pixel"
+            ]
         )
         .reproject(crs=modis_projection)
     )
 
-    return (
-        rural_fraction
-        .gte(minimum_rural_fraction)
-        .rename("rural_modis_mask")
-    )
-
-
-def build_rural_modis_mask(
-    cities: ee.FeatureCollection,
-    urban_mask_source: ee.Image,
-    dem_mask_source: ee.ImageCollection,
-    modis_projection: ee.Projection,
-    inner_buffer_m: int,
-    max_error_m: int,
-    max_slope_deg: float,
-    minimum_rural_fraction: float,
-    max_input_pixels: int
-) -> ee.Image:
-    """Build the MODIS-grid rural mask used to mask LST before reduction."""
-
-    urban_exclusion = build_global_urban_exclusion_mask(
-        cities=cities,
-        buffer_m=inner_buffer_m,
-        max_error_m=max_error_m,
-        reference_projection=(
-            urban_mask_source
-            .select("change_year_index")
-            .projection()
+    fraction_scale = static_config["fraction_value_scale"]
+    if type(fraction_scale) is not int or fraction_scale < 1:
+        raise ValueError(
+            "rural.static_assets.fraction_value_scale must be a positive integer."
         )
-    )
-    rural_binary = build_global_stable_rural_binary(
-        urban_mask_source=urban_mask_source,
-        dem_mask_source=dem_mask_source,
-        global_exclusion_mask=urban_exclusion,
-        max_slope_deg=max_slope_deg
-    )
-    return aggregate_rural_mask_to_modis(
-        rural_binary=rural_binary,
-        modis_projection=modis_projection,
-        minimum_rural_fraction=minimum_rural_fraction,
-        max_input_pixels=max_input_pixels
+    return (
+        modis_fraction
+        .multiply(fraction_scale)
+        .floor()
+        .toUint16()
+        .rename(RURAL_FRACTION_BAND)
+        .clip(subtile_region)
     )

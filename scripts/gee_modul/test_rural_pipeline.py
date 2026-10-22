@@ -1,14 +1,17 @@
 import ee
 
-from export_rural_monthly_lst import build_rural_halos, build_rural_mask
+from export_rural_monthly_lst import (
+    build_rural_mask,
+    verify_static_rural_assets
+)
 from src.batch_utils import (
-    compute_batch_assignment,
-    load_city_batch,
-    verify_city_batches
+    get_tile_city_counts,
+    TILE_ID_PROPERTY
 )
 from src.export_utils import (
     LST_OUTPUT_FIELDS,
     QC_OUTPUT_FIELDS,
+    asset_exists,
     build_yearly_lst_statistics,
     get_modis_reference_grid,
     initialize_gee,
@@ -30,31 +33,40 @@ def main() -> None:
     year = config["test"]["year"]
     id_field = config["cities"]["id_field"]
     tile_scale = config["processing"]["tile_scale"]
+    projection, scale = get_modis_reference_grid(config)
 
-    # Use the stored batch asset that the production export reads.
-    assignment = compute_batch_assignment(config)
-    batch_index = next(
-        (
-            index
-            for index, city_ids in enumerate(assignment)
-            if city_id in city_ids
-        ),
-        None
-    )
-    if batch_index is None:
-        raise ValueError(f"City {city_id} is not in any city batch.")
-    verify_city_batches(config, [batch_index], assignment)
-    city = select_single_city(
-        load_city_batch(config, batch_index),
+    halo_asset = config["rural"]["static_assets"]["halo_asset"]
+    if not asset_exists(halo_asset):
+        raise FileNotFoundError(
+            f"Rural halo asset not found: {halo_asset}. Run "
+            "build_rural_halos_asset.py first."
+        )
+    all_halos = ee.FeatureCollection(halo_asset)
+    rural_halos = select_single_city(
+        all_halos,
         id_field,
         city_id
     )
-    print(f"[CHECK] City ID: {city_id} in batch {batch_index:02d}")
+    city_tile_id = ee.Feature(
+        rural_halos.first()
+    ).get(TILE_ID_PROPERTY).getInfo()
+    tile_ids = list(get_tile_city_counts(all_halos))
+    if city_tile_id not in tile_ids:
+        raise ValueError(f"City {city_id} is not assigned to a MODIS tile.")
+    batch_index = tile_ids.index(city_tile_id)
+    verify_static_rural_assets(config, projection, rural_halos)
 
-    projection, scale = get_modis_reference_grid(config)
+    print(
+        f"[CHECK] City ID: {city_id} in batch {batch_index:03d} "
+        f"(MODIS tile {city_tile_id})"
+    )
+
     projection_info = projection.getInfo()
-    rural_halos = build_rural_halos(config, city)
-    rural_mask = build_rural_mask(config, projection)
+    rural_mask = build_rural_mask(
+        config,
+        scale,
+        rural_halos
+    )
 
     mask_crs = rural_mask.projection().getInfo()["crs"]
     if mask_crs != projection_info["crs"]:
@@ -63,11 +75,7 @@ def main() -> None:
             f"{mask_crs} != {projection_info['crs']}"
         )
 
-    halo = ee.Feature(select_single_city(
-        rural_halos,
-        id_field,
-        city_id
-    ).first())
+    halo = ee.Feature(rural_halos.first())
     halo_geometry = halo.geometry()
     halo_area_km2 = (
         halo_geometry
