@@ -13,7 +13,6 @@ from src.export_utils import (
     load_config
 )
 from src.rural_reference_utils import (
-    build_intermediate_modis_projection,
     build_rural_fraction_for_region
 )
 
@@ -52,10 +51,6 @@ def main() -> None:
     ensure_image_collection(fraction_collection)
     projection, scale = get_modis_reference_grid(config)
     projection_info = projection.getInfo()
-    intermediate_projection = build_intermediate_modis_projection(
-        modis_projection=projection,
-        scale_divisor=static_config["intermediate_scale_divisor"]
-    )
     halos = filter_nonempty_geometries(
         ee.FeatureCollection(halo_asset),
         rural_config["max_error_m"]
@@ -99,7 +94,6 @@ def main() -> None:
         fraction = build_rural_fraction_for_region(
             config=config,
             modis_projection=projection,
-            intermediate_projection=intermediate_projection,
             region=region,
             scale=scale
         )

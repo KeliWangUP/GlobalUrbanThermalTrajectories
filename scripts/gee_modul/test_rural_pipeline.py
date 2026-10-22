@@ -1,9 +1,5 @@
 import ee
 
-from export_rural_monthly_lst import (
-    build_rural_mask,
-    verify_static_rural_assets
-)
 from src.batch_utils import (
     filter_nonempty_geometries,
     get_tile_city_counts,
@@ -23,6 +19,11 @@ from src.pipeline_checks import (
     print_monthly_results,
     select_single_city,
     validate_monthly_records
+)
+from src.rural_reference_utils import (
+    RURAL_FRACTION_BAND,
+    apply_rural_fraction_threshold,
+    rural_city_fraction_asset_id
 )
 
 
@@ -58,7 +59,12 @@ def main() -> None:
     if city_tile_id not in tile_ids:
         raise ValueError(f"City {city_id} is not assigned to a MODIS tile.")
     batch_index = tile_ids.index(city_tile_id)
-    verify_static_rural_assets(config, projection, rural_halos)
+    fraction_asset = rural_city_fraction_asset_id(config, city_id)
+    if not asset_exists(fraction_asset):
+        raise FileNotFoundError(
+            f"City fraction asset not found: {fraction_asset}. Run "
+            "build_rural_city_fraction_assets.py first."
+        )
 
     print(
         f"[CHECK] City ID: {city_id} in batch {batch_index:03d} "
@@ -66,10 +72,12 @@ def main() -> None:
     )
 
     projection_info = projection.getInfo()
-    rural_mask = build_rural_mask(
+    rural_fraction = ee.Image(fraction_asset).select(
+        RURAL_FRACTION_BAND
+    )
+    rural_mask = apply_rural_fraction_threshold(
         config,
-        scale,
-        rural_halos
+        rural_fraction
     )
 
     mask_crs = rural_mask.projection().getInfo()["crs"]

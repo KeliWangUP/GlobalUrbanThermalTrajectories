@@ -1,5 +1,3 @@
-from typing import Any
-
 import ee
 
 from src.batch_utils import filter_nonempty_geometries
@@ -14,59 +12,10 @@ from src.export_utils import (
 )
 from src.rural_reference_utils import (
     apply_rural_fraction_threshold,
-    build_intermediate_modis_projection,
-    build_rural_fraction_for_region
+    resolve_rural_city_ids,
+    rural_city_fraction_asset_id,
+    RURAL_FRACTION_BAND
 )
-
-
-def resolve_city_ids(
-    config: dict[str, Any],
-    halos: ee.FeatureCollection
-) -> list[int | str]:
-    """Resolve configured city IDs against the non-empty halo asset."""
-    id_field = config["cities"]["id_field"]
-    available_ids = (
-        halos
-        .aggregate_array(id_field)
-        .distinct()
-        .sort()
-        .getInfo()
-    )
-    if not available_ids:
-        raise ValueError("The halo asset contains no non-empty city halos.")
-
-    requested_ids = config["export"]["rural_city_ids"]
-    if requested_ids is None:
-        return available_ids
-    if (
-        not isinstance(requested_ids, list)
-        or not requested_ids
-        or any(type(city_id) not in (int, str) for city_id in requested_ids)
-        or len(set(requested_ids)) != len(requested_ids)
-    ):
-        raise ValueError(
-            "export.rural_city_ids must be null or a non-empty list of "
-            "unique, non-null city IDs."
-        )
-
-    available_set = set(available_ids)
-    missing_ids = [
-        city_id
-        for city_id in requested_ids
-        if city_id not in available_set
-    ]
-    if missing_ids:
-        raise ValueError(
-            f"Configured city IDs are missing from the halo asset: "
-            f"{missing_ids}"
-        )
-
-    requested_set = set(requested_ids)
-    return [
-        city_id
-        for city_id in available_ids
-        if city_id in requested_set
-    ]
 
 
 def main() -> None:
@@ -84,15 +33,11 @@ def main() -> None:
         )
 
     projection, scale = get_modis_reference_grid(config)
-    intermediate_projection = build_intermediate_modis_projection(
-        modis_projection=projection,
-        scale_divisor=static_config["intermediate_scale_divisor"]
-    )
     halos = filter_nonempty_geometries(
         ee.FeatureCollection(halo_asset),
         rural_config["max_error_m"]
     )
-    city_ids = resolve_city_ids(config, halos)
+    city_ids = resolve_rural_city_ids(config, halos)
 
     start_index = export_config["rural_city_start_index"]
     max_tasks = export_config["rural_city_max_tasks_per_run"]
@@ -111,6 +56,18 @@ def main() -> None:
         )
 
     selected_city_ids = city_ids[start_index:start_index + max_tasks]
+    missing_fraction_assets = [
+        rural_city_fraction_asset_id(config, city_id)
+        for city_id in selected_city_ids
+        if not asset_exists(rural_city_fraction_asset_id(config, city_id))
+    ]
+    if missing_fraction_assets:
+        raise FileNotFoundError(
+            "City fraction assets are missing. Run "
+            "build_rural_city_fraction_assets.py first: "
+            + ", ".join(missing_fraction_assets[:5])
+        )
+
     end_year = config["study"]["end_year"]
     start_year = config["study"]["start_year"]
     dataset_name = export_config["rural_city_dataset_name"]
@@ -129,13 +86,10 @@ def main() -> None:
 
     for city_id in selected_city_ids:
         regions = halos.filter(ee.Filter.eq(id_field, city_id))
-        halo = ee.Feature(regions.first()).geometry()
-        fraction = build_rural_fraction_for_region(
-            config=config,
-            modis_projection=projection,
-            intermediate_projection=intermediate_projection,
-            region=halo,
-            scale=scale
+        fraction = ee.Image(
+            rural_city_fraction_asset_id(config, city_id)
+        ).select(
+            RURAL_FRACTION_BAND
         )
         rural_mask = apply_rural_fraction_threshold(config, fraction)
         statistics = build_study_period_lst_statistics(

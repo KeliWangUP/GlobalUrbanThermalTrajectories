@@ -1,3 +1,4 @@
+import re
 from typing import Any
 
 import ee
@@ -23,6 +24,72 @@ def apply_rural_fraction_threshold(
         .gte(round(minimum_fraction * fraction_scale))
         .rename("rural_modis_mask")
     )
+
+
+def rural_city_fraction_asset_id(
+    config: dict[str, Any],
+    city_id: int | str
+) -> str:
+    """Return the fraction image asset path for a city ID."""
+    token = str(city_id)
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", token):
+        raise ValueError(
+            f"City ID cannot be used as an Earth Engine asset name: {city_id}"
+        )
+    collection = config["rural"]["static_assets"][
+        "city_fraction_collection_asset"
+    ]
+    return f"{collection}/{token}"
+
+
+def resolve_rural_city_ids(
+    config: dict[str, Any],
+    halos: ee.FeatureCollection
+) -> list[int | str]:
+    """Resolve configured city IDs against the non-empty halo asset."""
+    id_field = config["cities"]["id_field"]
+    available_ids = (
+        halos
+        .aggregate_array(id_field)
+        .distinct()
+        .sort()
+        .getInfo()
+    )
+    if not available_ids:
+        raise ValueError("The halo asset contains no non-empty city halos.")
+
+    requested_ids = config["export"]["rural_city_ids"]
+    if requested_ids is None:
+        return available_ids
+    if (
+        not isinstance(requested_ids, list)
+        or not requested_ids
+        or any(type(city_id) not in (int, str) for city_id in requested_ids)
+        or len(set(requested_ids)) != len(requested_ids)
+    ):
+        raise ValueError(
+            "export.rural_city_ids must be null or a non-empty list of "
+            "unique, non-null city IDs."
+        )
+
+    available_set = set(available_ids)
+    missing_ids = [
+        city_id
+        for city_id in requested_ids
+        if city_id not in available_set
+    ]
+    if missing_ids:
+        raise ValueError(
+            f"Configured city IDs are missing from the halo asset: "
+            f"{missing_ids}"
+        )
+
+    requested_set = set(requested_ids)
+    return [
+        city_id
+        for city_id in available_ids
+        if city_id in requested_set
+    ]
 
 
 def build_rural_halo(
@@ -79,41 +146,6 @@ def build_all_rural_halos(
     )
 
 
-def build_intermediate_modis_projection(
-    modis_projection: ee.Projection,
-    scale_divisor: int
-) -> ee.Projection:
-    """Create a MODIS-aligned projection with finer, nested pixels."""
-    if type(scale_divisor) is not int or scale_divisor < 1:
-        raise ValueError("Intermediate scale divisor must be a positive integer.")
-
-    projection_info = modis_projection.getInfo()
-    transform = projection_info["transform"]
-    if (
-        len(transform) != 6
-        or transform[0] <= 0
-        or transform[4] >= 0
-        or transform[1] != 0
-        or transform[3] != 0
-    ):
-        raise ValueError(
-            "MODIS projection must provide an axis-aligned affine transform."
-        )
-
-    intermediate_transform = [
-        transform[0] / scale_divisor,
-        0,
-        transform[2],
-        0,
-        transform[4] / scale_divisor,
-        transform[5]
-    ]
-    return ee.Projection(
-        projection_info["crs"],
-        intermediate_transform
-    )
-
-
 def build_local_rural_eligibility(
     urban_mask_source: ee.Image,
     dem_mask_source: ee.ImageCollection,
@@ -160,11 +192,10 @@ def build_local_rural_eligibility(
 def build_rural_fraction_for_region(
     config: dict[str, Any],
     modis_projection: ee.Projection,
-    intermediate_projection: ee.Projection,
     region: ee.Geometry,
     scale: float
 ) -> ee.Image:
-    """Aggregate fine suitability over a bounded region on nested MODIS grids."""
+    """Aggregate fine suitability directly to the MODIS grid."""
     rural_config = config["rural"]
     static_config = rural_config["static_assets"]
     max_error_m = rural_config["max_error_m"]
@@ -183,24 +214,13 @@ def build_rural_fraction_for_region(
         )
         .clip(processing_region)
     )
-    intermediate_fraction = (
+    modis_fraction = (
         fine_eligibility
         .toFloat()
         .reduceResolution(
             reducer=ee.Reducer.mean(),
             maxPixels=static_config[
-                "max_source_pixels_per_intermediate_pixel"
-            ]
-        )
-        .reproject(crs=intermediate_projection)
-        .clip(processing_region)
-    )
-    modis_fraction = (
-        intermediate_fraction
-        .reduceResolution(
-            reducer=ee.Reducer.mean(),
-            maxPixels=static_config[
-                "max_intermediate_pixels_per_modis_pixel"
+                "max_source_pixels_per_modis_pixel"
             ]
         )
         .reproject(crs=modis_projection)
