@@ -71,7 +71,7 @@ def get_prioritized_city_ids(
         if city_id not in priority_set
     ]
     missing_halos = len(priority_set - available_set)
-    return prioritized + remaining, len(priority_set), missing_halos
+    return prioritized + remaining, len(prioritized), missing_halos
 
 
 def main() -> None:
@@ -100,6 +100,14 @@ def main() -> None:
     )
 
     export_config = config["export"]
+    priority_only = export_config["rural_city_fraction_priority_only"]
+    if type(priority_only) is not bool:
+        raise ValueError(
+            "export.rural_city_fraction_priority_only must be a boolean."
+        )
+    if priority_only:
+        city_ids = city_ids[:priority_count]
+
     max_tasks = export_config["rural_city_fraction_max_tasks_per_run"]
     if type(max_tasks) is not int or max_tasks < 1:
         raise ValueError(
@@ -117,9 +125,9 @@ def main() -> None:
     selected_city_ids = missing[:max_tasks]
     print(
         f"[INFO] {len(city_ids)} halo cities in queue; "
-        f"{priority_count} intersect priority points; "
+        f"{priority_count} priority cities have non-empty halos; "
         f"{priority_without_halo_count} priority cities have no non-empty "
-        "halo; "
+        f"halo; priority-only mode={priority_only}; "
         f"{len(existing)} fraction assets exist; "
         f"{len(missing)} remain; submitting {len(selected_city_ids)} "
         "missing assets."
