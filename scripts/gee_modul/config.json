@@ -21,7 +21,8 @@
 
   "test": {
     "city_id": 5249,
-    "year": 2020
+    "year": 2020,
+    "fraction_diagnostic_city_id": 5929
   },
 
   "reference_grid": {
