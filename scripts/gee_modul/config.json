@@ -136,6 +136,11 @@
     "rural_city_start_year": 2020,
     "rural_city_end_year": 2020,
     "rural_city_fraction_priority_only": true,
+    "rural_city_fraction_chunked_ids": [
+      5929,
+      6090
+    ],
+    "rural_city_fraction_chunk_pixels": 64,
     "rural_city_fraction_max_tasks_per_run": 3000
   }
 }

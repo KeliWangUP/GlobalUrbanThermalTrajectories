@@ -3,7 +3,10 @@ from typing import Any
 
 import ee
 
-from src.batch_utils import TILE_ID_PROPERTY
+from src.batch_utils import (
+    TILE_ID_PROPERTY,
+    get_occupied_subtile_ids
+)
 
 RURAL_FRACTION_BAND = "rural_fraction_scaled"
 
@@ -40,6 +43,80 @@ def rural_city_fraction_asset_id(
         "city_fraction_collection_asset"
     ]
     return f"{collection}/{token}"
+
+
+def rural_city_fraction_chunk_asset_id(
+    config: dict[str, Any],
+    city_id: int | str,
+    subtile_id: str
+) -> str:
+    """Return the asset path for one MODIS-aligned city fraction chunk."""
+    if not re.fullmatch(r"x\d{3}y\d{3}", subtile_id):
+        raise ValueError(f"Invalid MODIS subtile ID: {subtile_id}")
+    return f"{rural_city_fraction_asset_id(config, city_id)}_{subtile_id}"
+
+
+def load_rural_city_fraction(
+    config: dict[str, Any],
+    city_id: int | str
+) -> ee.Image:
+    """Mosaic all stored fraction images belonging to a city."""
+    collection = config["rural"]["static_assets"][
+        "city_fraction_collection_asset"
+    ]
+    return (
+        ee.ImageCollection(collection)
+        .filter(ee.Filter.eq("city_id", city_id))
+        .select(RURAL_FRACTION_BAND)
+        .mosaic()
+    )
+
+
+def get_missing_rural_city_fraction_assets(
+    config: dict[str, Any],
+    city_ids: list[int | str],
+    halos: ee.FeatureCollection,
+    projection: ee.Projection,
+    existing_names: set[str]
+) -> list[str]:
+    """List missing direct or chunked fraction assets for selected cities."""
+    export_config = config["export"]
+    chunked_city_ids = set(
+        export_config["rural_city_fraction_chunked_ids"]
+    )
+    chunk_pixels = export_config["rural_city_fraction_chunk_pixels"]
+    id_field = config["cities"]["id_field"]
+    missing: list[str] = []
+
+    for city_id in city_ids:
+        direct_asset = rural_city_fraction_asset_id(config, city_id)
+        direct_name = direct_asset.rsplit("/", 1)[-1]
+        if city_id not in chunked_city_ids or direct_name in existing_names:
+            if direct_name not in existing_names:
+                missing.append(direct_asset)
+            continue
+
+        city_halos = halos.filter(ee.Filter.eq(id_field, city_id))
+        subtile_ids = get_occupied_subtile_ids(
+            config=config,
+            projection=projection,
+            rural_halos=city_halos,
+            subtile_pixels=chunk_pixels
+        )
+        if not subtile_ids:
+            raise ValueError(
+                f"No MODIS subtiles intersect city {city_id}'s rural halo."
+            )
+        for subtile_id in subtile_ids:
+            chunk_asset = rural_city_fraction_chunk_asset_id(
+                config,
+                city_id,
+                subtile_id
+            )
+            if chunk_asset.rsplit("/", 1)[-1] not in existing_names:
+                missing.append(chunk_asset)
+
+    return missing
 
 
 def resolve_rural_city_ids(

@@ -2,7 +2,11 @@ from typing import Any
 
 import ee
 
-from src.batch_utils import filter_nonempty_geometries
+from src.batch_utils import (
+    filter_nonempty_geometries,
+    get_occupied_subtile_ids,
+    get_subtile_geometry
+)
 from src.export_utils import (
     asset_exists,
     get_modis_reference_grid,
@@ -13,6 +17,7 @@ from src.export_utils import (
 from src.rural_reference_utils import (
     build_rural_fraction_for_region,
     get_priority_city_ids,
+    rural_city_fraction_chunk_asset_id,
     rural_city_fraction_asset_id
 )
 
@@ -116,38 +121,110 @@ def main() -> None:
         )
 
     existing = list_image_asset_names(collection_asset)
-    missing = [
-        city_id
-        for city_id in city_ids
-        if rural_city_fraction_asset_id(config, city_id)
-        .rsplit("/", 1)[-1] not in existing
-    ]
-    selected_city_ids = missing[:max_tasks]
+    chunked_city_ids = export_config["rural_city_fraction_chunked_ids"]
+    if (
+        not isinstance(chunked_city_ids, list)
+        or len(set(chunked_city_ids)) != len(chunked_city_ids)
+        or any(type(city_id) not in (int, str) for city_id in chunked_city_ids)
+    ):
+        raise ValueError(
+            "export.rural_city_fraction_chunked_ids must be a list of "
+            "unique city IDs."
+        )
+    unknown_chunked_ids = set(chunked_city_ids) - set(city_ids)
+    if unknown_chunked_ids:
+        raise ValueError(
+            "Chunked fraction city IDs are not in the selected halo queue: "
+            f"{sorted(unknown_chunked_ids)}"
+        )
+    chunk_pixels = export_config["rural_city_fraction_chunk_pixels"]
+    if type(chunk_pixels) is not int or chunk_pixels < 1:
+        raise ValueError(
+            "export.rural_city_fraction_chunk_pixels must be a positive "
+            "integer."
+        )
+
+    chunked_set = set(chunked_city_ids)
+    jobs: list[tuple[int | str, str | None]] = []
+    for city_id in city_ids:
+        direct_asset = rural_city_fraction_asset_id(config, city_id)
+        direct_name = direct_asset.rsplit("/", 1)[-1]
+        if city_id not in chunked_set:
+            if direct_name not in existing:
+                jobs.append((city_id, None))
+            continue
+        if direct_name in existing:
+            continue
+
+        city_halos = halos.filter(
+            ee.Filter.eq(config["cities"]["id_field"], city_id)
+        )
+        subtile_ids = get_occupied_subtile_ids(
+            config=config,
+            projection=projection,
+            rural_halos=city_halos,
+            subtile_pixels=chunk_pixels
+        )
+        if not subtile_ids:
+            raise ValueError(
+                f"No MODIS subtiles intersect city {city_id}'s rural halo."
+            )
+        for subtile_id in subtile_ids:
+            chunk_asset = rural_city_fraction_chunk_asset_id(
+                config,
+                city_id,
+                subtile_id
+            )
+            if chunk_asset.rsplit("/", 1)[-1] not in existing:
+                jobs.append((city_id, subtile_id))
+
+    selected_jobs = jobs[:max_tasks]
     print(
         f"[INFO] {len(city_ids)} halo cities in queue; "
         f"{priority_count} priority cities have non-empty halos; "
         f"{priority_without_halo_count} priority cities have no non-empty "
         f"halo; priority-only mode={priority_only}; "
         f"{len(existing)} fraction assets exist; "
-        f"{len(missing)} remain; submitting {len(selected_city_ids)} "
-        "missing assets."
+        f"{len(jobs)} fraction images remain; submitting "
+        f"{len(selected_jobs)}."
     )
 
-    for city_id in selected_city_ids:
+    for city_id, subtile_id in selected_jobs:
         regions = halos.filter(
             ee.Filter.eq(config["cities"]["id_field"], city_id)
         )
-        region = ee.Feature(regions.first()).geometry()
+        halo_geometry = ee.Feature(regions.first()).geometry()
+        if subtile_id is None:
+            region = halo_geometry
+            asset_id = rural_city_fraction_asset_id(config, city_id)
+        else:
+            subtile_geometry = get_subtile_geometry(
+                config=config,
+                projection=projection,
+                subtile_id=subtile_id,
+                subtile_pixels=chunk_pixels
+            )
+            region = halo_geometry.intersection(
+                subtile_geometry,
+                rural_config["max_error_m"]
+            )
+            asset_id = rural_city_fraction_chunk_asset_id(
+                config,
+                city_id,
+                subtile_id
+            )
         fraction = build_rural_fraction_for_region(
             config=config,
             modis_projection=projection,
             region=region,
             scale=scale
         ).set("city_id", city_id)
-        asset_id = rural_city_fraction_asset_id(config, city_id)
         description = (
             f"rural_fraction_city_{config['project']['version']}_{city_id}"
         )
+        if subtile_id is not None:
+            description = f"{description}_{subtile_id}"
+            fraction = fraction.set("subtile_id", subtile_id)
         task = ee.batch.Export.image.toAsset(
             image=fraction,
             description=description,
@@ -162,9 +239,9 @@ def main() -> None:
         print(f"[EXPORT] {asset_id}")
         print(f"[TASK] {task.id}")
 
-    remaining = len(missing) - len(selected_city_ids)
+    remaining = len(jobs) - len(selected_jobs)
     print(
-        f"[NEXT] Submitted {len(selected_city_ids)} city fraction tasks; "
+        f"[NEXT] Submitted {len(selected_jobs)} city fraction tasks; "
         f"{max(remaining, 0)} remain after this batch."
     )
     if remaining > 0:

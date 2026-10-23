@@ -8,13 +8,14 @@ from src.export_utils import (
     export_table_to_drive,
     get_modis_reference_grid,
     initialize_gee,
+    list_image_asset_names,
     load_config
 )
 from src.rural_reference_utils import (
     apply_rural_fraction_threshold,
+    get_missing_rural_city_fraction_assets,
+    load_rural_city_fraction,
     resolve_rural_city_ids,
-    rural_city_fraction_asset_id,
-    RURAL_FRACTION_BAND
 )
 
 
@@ -30,6 +31,13 @@ def main() -> None:
         raise FileNotFoundError(
             f"Rural halo asset not found: {halo_asset}. Run "
             "build_rural_halos_asset.py first."
+        )
+    fraction_collection = static_config["city_fraction_collection_asset"]
+    if not asset_exists(fraction_collection):
+        raise FileNotFoundError(
+            "City fraction ImageCollection not found: "
+            f"{fraction_collection}. Run "
+            "build_rural_city_fraction_assets.py first."
         )
 
     projection, scale = get_modis_reference_grid(config)
@@ -56,11 +64,13 @@ def main() -> None:
         )
 
     selected_city_ids = city_ids[start_index:start_index + max_tasks]
-    missing_fraction_assets = [
-        rural_city_fraction_asset_id(config, city_id)
-        for city_id in selected_city_ids
-        if not asset_exists(rural_city_fraction_asset_id(config, city_id))
-    ]
+    missing_fraction_assets = get_missing_rural_city_fraction_assets(
+        config=config,
+        city_ids=selected_city_ids,
+        halos=halos,
+        projection=projection,
+        existing_names=list_image_asset_names(fraction_collection)
+    )
     if missing_fraction_assets:
         raise FileNotFoundError(
             "City fraction assets are missing. Run "
@@ -86,11 +96,7 @@ def main() -> None:
 
     for city_id in selected_city_ids:
         regions = halos.filter(ee.Filter.eq(id_field, city_id))
-        fraction = ee.Image(
-            rural_city_fraction_asset_id(config, city_id)
-        ).select(
-            RURAL_FRACTION_BAND
-        )
+        fraction = load_rural_city_fraction(config, city_id)
         rural_mask = apply_rural_fraction_threshold(config, fraction)
         statistics = build_study_period_lst_statistics(
             regions=regions,

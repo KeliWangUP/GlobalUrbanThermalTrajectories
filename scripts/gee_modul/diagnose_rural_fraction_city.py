@@ -1,4 +1,3 @@
-import math
 from typing import Any
 
 import ee
@@ -9,39 +8,62 @@ from src.export_utils import get_modis_reference_grid, initialize_gee, load_conf
 
 def projection_summary(
     label: str,
-    image: ee.Image,
-    region: ee.Geometry,
-    max_error_m: int
+    image: ee.Image
 ) -> None:
     print(f"\n[PROJECTION] {label}", flush=True)
     projection = image.projection()
     try:
         info = projection.getInfo()
         nominal_scale = projection.nominalScale().getInfo()
-        bounds = (
-            region
-            .bounds(maxError=max_error_m, proj=projection)
-            .coordinates()
-            .getInfo()[0]
-        )
     except ee.EEException as exc:
         print(f"[FAILED] Projection inspection for {label}: {exc}", flush=True)
         raise
 
     transform = info["transform"]
-    x_values = [point[0] for point in bounds]
-    y_values = [point[1] for point in bounds]
-    width = max(x_values) - min(x_values)
-    height = max(y_values) - min(y_values)
-    columns = math.ceil(width / abs(transform[0]))
-    rows = math.ceil(height / abs(transform[4]))
     print(f"  CRS: {info['crs']}", flush=True)
     print(f"  transform: {transform}", flush=True)
     print(f"  nominal scale: {nominal_scale}", flush=True)
+
+
+def print_modis_pixel_bounds(
+    region: ee.Geometry,
+    projection: ee.Projection,
+    projection_info: dict[str, Any],
+    max_pixels: int,
+    tile_scale: int
+) -> None:
+    print("\n[GRID] Counting the halo's MODIS-grid pixel bounds", flush=True)
+    pixel_coordinates = ee.Image.pixelCoordinates(projection)
+    try:
+        bounds = (
+            pixel_coordinates
+            .reduceRegion(
+                reducer=ee.Reducer.minMax(),
+                geometry=region,
+                crs=projection_info["crs"],
+                crsTransform=projection_info["transform"],
+                maxPixels=max_pixels,
+                tileScale=tile_scale
+            )
+            .getInfo()
+        )
+    except ee.EEException as exc:
+        print(f"[FAILED] MODIS pixel-bound calculation: {exc}", flush=True)
+        raise
+
+    required_keys = ("x_min", "x_max", "y_min", "y_max")
+    if any(bounds.get(key) is None for key in required_keys):
+        raise ValueError(
+            f"MODIS pixel bounds were incomplete: {bounds}"
+        )
+    columns = int(bounds["x_max"] - bounds["x_min"] + 1)
+    rows = int(bounds["y_max"] - bounds["y_min"] + 1)
     print(
-        f"  region bounds estimate: {columns} x {rows} pixels",
+        f"  x={bounds['x_min']}..{bounds['x_max']}; "
+        f"y={bounds['y_min']}..{bounds['y_max']}",
         flush=True
     )
+    print(f"  MODIS pixel bounds: {columns} x {rows}", flush=True)
 
 
 def evaluate_stage(
@@ -108,25 +130,16 @@ def main() -> None:
         .divide(1_000_000)
         .getInfo()
     )
-    modis_bounds = (
-        halo_geometry
-        .bounds(maxError=max_error_m, proj=modis_projection)
-        .coordinates()
-        .getInfo()[0]
-    )
-    x_values = [point[0] for point in modis_bounds]
-    y_values = [point[1] for point in modis_bounds]
-    modis_transform = modis_projection_info["transform"]
-    expected_columns = math.ceil(
-        (max(x_values) - min(x_values)) / abs(modis_transform[0])
-    )
-    expected_rows = math.ceil(
-        (max(y_values) - min(y_values)) / abs(modis_transform[4])
-    )
     print(
-        f"[CITY] ID={city_id}; halo area={area_km2:.2f} km^2; "
-        f"expected MODIS bounds={expected_columns} x {expected_rows} pixels",
+        f"[CITY] ID={city_id}; halo area={area_km2:.2f} km^2",
         flush=True
+    )
+    print_modis_pixel_bounds(
+        region=halo_geometry,
+        projection=modis_projection,
+        projection_info=modis_projection_info,
+        max_pixels=static_config["export_max_pixels"],
+        tile_scale=tile_scale
     )
 
     gaia = ee.Image(rural_config["gaia_asset"])
@@ -200,9 +213,7 @@ def main() -> None:
     for label, image in stages:
         projection_summary(
             label=label,
-            image=image,
-            region=halo_geometry,
-            max_error_m=max_error_m
+            image=image
         )
         evaluate_stage(
             label=label,

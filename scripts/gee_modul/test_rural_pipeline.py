@@ -12,6 +12,7 @@ from src.export_utils import (
     build_yearly_lst_statistics,
     get_modis_reference_grid,
     initialize_gee,
+    list_image_asset_names,
     load_config
 )
 from src.pipeline_checks import (
@@ -21,9 +22,9 @@ from src.pipeline_checks import (
     validate_monthly_records
 )
 from src.rural_reference_utils import (
-    RURAL_FRACTION_BAND,
     apply_rural_fraction_threshold,
-    rural_city_fraction_asset_id
+    get_missing_rural_city_fraction_assets,
+    load_rural_city_fraction
 )
 
 
@@ -59,10 +60,25 @@ def main() -> None:
     if city_tile_id not in tile_ids:
         raise ValueError(f"City {city_id} is not assigned to a MODIS tile.")
     batch_index = tile_ids.index(city_tile_id)
-    fraction_asset = rural_city_fraction_asset_id(config, city_id)
-    if not asset_exists(fraction_asset):
+    fraction_collection = config["rural"]["static_assets"][
+        "city_fraction_collection_asset"
+    ]
+    if not asset_exists(fraction_collection):
         raise FileNotFoundError(
-            f"City fraction asset not found: {fraction_asset}. Run "
+            f"City fraction collection not found: {fraction_collection}. Run "
+            "build_rural_city_fraction_assets.py first."
+        )
+    missing_fraction_assets = get_missing_rural_city_fraction_assets(
+        config=config,
+        city_ids=[city_id],
+        halos=rural_halos,
+        projection=projection,
+        existing_names=list_image_asset_names(fraction_collection)
+    )
+    if missing_fraction_assets:
+        raise FileNotFoundError(
+            "City fraction assets not found: "
+            f"{', '.join(missing_fraction_assets)}. Run "
             "build_rural_city_fraction_assets.py first."
         )
 
@@ -72,9 +88,7 @@ def main() -> None:
     )
 
     projection_info = projection.getInfo()
-    rural_fraction = ee.Image(fraction_asset).select(
-        RURAL_FRACTION_BAND
-    )
+    rural_fraction = load_rural_city_fraction(config, city_id)
     rural_mask = apply_rural_fraction_threshold(
         config,
         rural_fraction

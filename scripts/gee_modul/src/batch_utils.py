@@ -151,15 +151,17 @@ def filter_nonempty_geometries(
 def get_occupied_subtile_ids(
     config: dict[str, Any],
     projection: ee.Projection,
-    rural_halos: ee.FeatureCollection
+    rural_halos: ee.FeatureCollection,
+    subtile_pixels: int | None = None
 ) -> list[str]:
     """Find MODIS subtiles intersecting at least one non-empty rural halo."""
     tile_pixels, tile_columns, tile_rows = _validate_tile_grid(config)
     transform, crs = _grid_transform(projection)
-    subtile_pixels = config["rural"]["static_assets"]["subtile_pixels"]
+    if subtile_pixels is None:
+        subtile_pixels = config["rural"]["static_assets"]["subtile_pixels"]
     if type(subtile_pixels) is not int or subtile_pixels < 1:
         raise ValueError(
-            "rural.static_assets.subtile_pixels must be a positive integer."
+            "subtile_pixels must be a positive integer."
         )
 
     total_columns = tile_pixels * tile_columns
@@ -259,7 +261,8 @@ def get_occupied_subtile_ids(
 def get_subtile_geometry(
     config: dict[str, Any],
     projection: ee.Projection,
-    subtile_id: str
+    subtile_id: str,
+    subtile_pixels: int | None = None
 ) -> ee.Geometry:
     """Return a configured MODIS-aligned subtile geometry."""
     if (
@@ -274,7 +277,12 @@ def get_subtile_geometry(
     tile_pixels, tile_columns, tile_rows = _validate_tile_grid(config)
     transform, crs = _grid_transform(projection)
     geometry_projection = ee.Projection(crs)
-    subtile_pixels = config["rural"]["static_assets"]["subtile_pixels"]
+    if subtile_pixels is None:
+        subtile_pixels = config["rural"]["static_assets"]["subtile_pixels"]
+    if type(subtile_pixels) is not int or subtile_pixels < 1:
+        raise ValueError(
+            "subtile_pixels must be a positive integer."
+        )
     total_columns = tile_pixels * tile_columns
     total_rows = tile_pixels * tile_rows
     column = int(subtile_id[1:4])

@@ -13,7 +13,7 @@ from src.rural_reference_utils import (
     RURAL_FRACTION_BAND,
     apply_rural_fraction_threshold,
     get_priority_city_ids,
-    rural_city_fraction_asset_id
+    get_missing_rural_city_fraction_assets
 )
 
 
@@ -65,13 +65,15 @@ def main() -> None:
             "No priority city IDs have a non-empty rural halo."
         )
 
+    projection, scale = get_modis_reference_grid(config)
     existing_names = list_image_asset_names(fraction_collection)
-    missing_assets = [
-        rural_city_fraction_asset_id(config, city_id)
-        for city_id in selected_ids
-        if rural_city_fraction_asset_id(config, city_id)
-        .rsplit("/", 1)[-1] not in existing_names
-    ]
+    missing_assets = get_missing_rural_city_fraction_assets(
+        config=config,
+        city_ids=selected_ids,
+        halos=halos,
+        projection=projection,
+        existing_names=existing_names
+    )
     if missing_assets:
         raise FileNotFoundError(
             f"{len(missing_assets)} priority cities are missing fraction "
@@ -90,7 +92,6 @@ def main() -> None:
         config,
         city_fractions.mosaic()
     )
-    projection, scale = get_modis_reference_grid(config)
 
     print(
         f"[INFO] {len(priority_ids)} priority city polygons matched points; "
