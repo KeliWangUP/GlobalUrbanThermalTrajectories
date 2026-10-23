@@ -92,6 +92,30 @@ def resolve_rural_city_ids(
     ]
 
 
+def get_priority_city_ids(
+    config: dict[str, Any]
+) -> list[int | str]:
+    """Get city IDs whose polygons intersect the configured priority points."""
+    points = ee.FeatureCollection(
+        config["cities"]["priority_points_asset"]
+    )
+    polygons = ee.FeatureCollection(config["cities"]["asset"])
+    id_field = config["cities"]["id_field"]
+    city_ids = (
+        polygons
+        .filterBounds(points.geometry())
+        .aggregate_array(id_field)
+        .distinct()
+        .sort()
+        .getInfo()
+    )
+    if not city_ids:
+        raise ValueError(
+            "No city polygons intersect the configured priority points."
+        )
+    return city_ids
+
+
 def build_rural_halo(
     feature: ee.Feature,
     all_cities: ee.FeatureCollection,

@@ -126,6 +126,7 @@
     "rural_dataset_name": "rural_lst",
     "rural_batch_indices": null,
     "rural_city_dataset_name": "rural_lst_by_city",
+    "rural_priority_dataset_name": "rural_lst_over_300k",
     "rural_city_ids": [
       5249
     ],

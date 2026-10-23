@@ -12,6 +12,7 @@ from src.export_utils import (
 )
 from src.rural_reference_utils import (
     build_rural_fraction_for_region,
+    get_priority_city_ids,
     rural_city_fraction_asset_id
 )
 
@@ -55,20 +56,7 @@ def get_prioritized_city_ids(
         raise FileNotFoundError(
             f"Priority city point asset not found: {points_asset}"
         )
-    points = ee.FeatureCollection(points_asset)
-    polygons = ee.FeatureCollection(config["cities"]["asset"])
-    priority_ids = (
-        polygons
-        .filterBounds(points.geometry())
-        .aggregate_array(id_field)
-        .distinct()
-        .sort()
-        .getInfo()
-    )
-    if not priority_ids:
-        raise ValueError(
-            "No city polygons intersect the configured priority points."
-        )
+    priority_ids = get_priority_city_ids(config)
 
     available_set = set(available_ids)
     priority_set = set(priority_ids)
