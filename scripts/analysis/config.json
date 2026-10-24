@@ -1,0 +1,14 @@
+{
+  "paths": {
+    "urban_raw_dir": "../../data/raw/urban",
+    "rural_raw_dir": "../../data/raw/rural",
+    "urban_parquet_dir": "../../data/parquet/urban",
+    "rural_parquet_dir": "../../data/parquet/rural",
+    "monthly_suhi_file": "../../data/processed/suhi_monthly.parquet",
+    "seasonal_suhi_file": "../../data/processed/suhi_seasonal.parquet",
+    "annual_suhi_file": "../../data/processed/suhi_annual.parquet"
+  },
+  "parquet": {
+    "compression": "zstd"
+  }
+}
