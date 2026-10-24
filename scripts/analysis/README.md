@@ -23,7 +23,13 @@ left untouched.
 Input directories, output file paths, and Parquet compression are set in
 [`config.json`](./config.json). Relative paths in that file are resolved from
 the config file's directory, so they can be changed without editing the
-Python scripts.
+Python scripts. It also contains the quality thresholds used by the analysis:
+each urban and rural slot must have at least 5 valid pixels, a spatial-mean
+clear-day count of 4, and a spatial-mean valid 8-day composite count of 1.
+Both urban and rural values must meet all three thresholds for that slot.
+Failed monthly values are set to null in the analysis panel, while the original
+QC fields and per-slot pass flags are retained. These are provisional starting
+thresholds and are applied together.
 
 Run the steps from the repository root:
 
@@ -41,7 +47,10 @@ mean LST minus rural mean LST for Terra/Aqua day/night.
 Seasonal groups use fixed meteorological months: DJF, MAM, JJA, and SON.
 December belongs to the following season year. Seasonal and annual means give
 each available monthly value equal weight. Outputs include valid-SUHI-month
-counts and completeness flags; boundary DJF groups remain present but are
-marked incomplete when fewer than three calendar months are available.
+counts and completeness flags. A season is marked QC-pass per slot with at
+least 2 valid months; a year requires at least 9. Boundary DJF groups remain
+present and are separately marked incomplete when fewer than three calendar
+months are available. Seasonal and annual values are null when their per-slot
+minimum number of QC-passing months is not reached.
 LST mean columns are already in degrees Celsius in the GEE exports, so no
 additional unit conversion is applied here.

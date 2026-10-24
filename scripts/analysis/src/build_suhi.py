@@ -3,6 +3,8 @@ import tempfile
 
 import pandas as pd
 
+from src.config import QualityControlConfig
+
 
 KEY_COLUMNS = ["ID_UC_G0", "year", "month"]
 LST_SLOTS = ("terra_day", "terra_night", "aqua_day", "aqua_night")
@@ -33,9 +35,10 @@ SEASON_ORDER = {"DJF": 0, "MAM": 1, "JJA": 2, "SON": 3}
 def build_monthly_suhi(
     urban: pd.DataFrame,
     rural: pd.DataFrame,
-    expected_year: int
+    expected_year: int,
+    quality_control: QualityControlConfig
 ) -> pd.DataFrame:
-    """Join the rural city subset to urban statistics and calculate monthly SUHI."""
+    """Join rural and urban data, apply slot-level QC, and calculate SUHI."""
     for name, frame in (("urban", urban), ("rural", rural)):
         if frame.duplicated(KEY_COLUMNS).any():
             raise ValueError(
@@ -66,6 +69,23 @@ def build_monthly_suhi(
         raise ValueError(
             f"Required LST mean columns are missing: {missing_means}"
         )
+    required_qc_columns = [
+        f"{slot}_{suffix}"
+        for slot in LST_SLOTS
+        for suffix in (
+            "count",
+            "clear_days_mean",
+            "n8day_mean"
+        )
+    ]
+    missing_qc_columns = [
+        column for column in required_qc_columns
+        if column not in urban_metrics
+    ]
+    if missing_qc_columns:
+        raise ValueError(
+            f"Required QC columns are missing: {missing_qc_columns}"
+        )
 
     urban_for_join = urban.rename(
         columns={column: f"urban_{column}" for column in urban_metrics}
@@ -90,8 +110,36 @@ def build_monthly_suhi(
     joined = joined.drop(columns="_merge")
 
     for slot in LST_SLOTS:
+        urban_mean_column = f"urban_{slot}_mean"
+        rural_mean_column = f"rural_{slot}_mean"
+        qc_pass = pd.Series(True, index=joined.index, dtype=bool)
+        for side in ("urban", "rural"):
+            qc_metrics = (
+                (
+                    f"{side}_{slot}_count",
+                    quality_control.min_valid_pixels_per_side_slot
+                ),
+                (
+                    f"{side}_{slot}_clear_days_mean",
+                    quality_control.min_clear_days_mean_per_side_slot
+                ),
+                (
+                    f"{side}_{slot}_n8day_mean",
+                    quality_control.min_n8day_mean_per_side_slot
+                )
+            )
+            for column, minimum in qc_metrics:
+                qc_pass &= joined[column].ge(minimum).fillna(False)
+        qc_pass &= joined[urban_mean_column].notna()
+        qc_pass &= joined[rural_mean_column].notna()
+        joined[f"qc_pass_{slot}"] = qc_pass
+
+        joined.loc[
+            ~qc_pass,
+            [urban_mean_column, rural_mean_column]
+        ] = float("nan")
         joined[f"suhi_{slot}_mean"] = (
-            joined[f"urban_{slot}_mean"] - joined[f"rural_{slot}_mean"]
+            joined[urban_mean_column] - joined[rural_mean_column]
         )
     return joined.sort_values(KEY_COLUMNS, kind="stable").reset_index(drop=True)
 
@@ -100,7 +148,9 @@ def _aggregate_monthly_values(
     panel: pd.DataFrame,
     group_columns: list[str],
     expected_months: int,
-    completeness_column: str
+    completeness_column: str,
+    minimum_valid_months: int,
+    quality_period: str
 ) -> pd.DataFrame:
     grouped = panel.groupby(group_columns, sort=True, observed=True)
     means = grouped[PANEL_VALUE_COLUMNS].mean().reset_index()
@@ -131,10 +181,21 @@ def _aggregate_monthly_values(
     result[completeness_column] = (
         result["n_calendar_months"] == expected_months
     )
+    for slot in LST_SLOTS:
+        qc_pass = (
+            result[f"n_valid_months_{slot}"] >= minimum_valid_months
+        )
+        result[f"qc_pass_{quality_period}_{slot}"] = qc_pass
+        for side in ("urban", "rural"):
+            result.loc[~qc_pass, f"{side}_{slot}_mean"] = float("nan")
+        result.loc[~qc_pass, f"suhi_{slot}_mean"] = float("nan")
     return result
 
 
-def aggregate_seasonal_suhi(monthly: pd.DataFrame) -> pd.DataFrame:
+def aggregate_seasonal_suhi(
+    monthly: pd.DataFrame,
+    quality_control: QualityControlConfig
+) -> pd.DataFrame:
     """Aggregate monthly values into fixed DJF/MAM/JJA/SON seasons."""
     seasonal = monthly.copy()
     seasonal["season"] = seasonal["month"].map(SEASON_BY_MONTH)
@@ -145,7 +206,9 @@ def aggregate_seasonal_suhi(monthly: pd.DataFrame) -> pd.DataFrame:
         panel=seasonal,
         group_columns=["ID_UC_G0", "season_year", "season"],
         expected_months=3,
-        completeness_column="is_complete_season"
+        completeness_column="is_complete_season",
+        minimum_valid_months=quality_control.min_valid_months_per_season,
+        quality_period="season"
     )
     result["_season_order"] = result["season"].map(SEASON_ORDER)
     return (
@@ -159,14 +222,19 @@ def aggregate_seasonal_suhi(monthly: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def aggregate_annual_suhi(monthly: pd.DataFrame) -> pd.DataFrame:
+def aggregate_annual_suhi(
+    monthly: pd.DataFrame,
+    quality_control: QualityControlConfig
+) -> pd.DataFrame:
     """Aggregate monthly values into calendar-year means."""
     return (
         _aggregate_monthly_values(
             panel=monthly,
             group_columns=["ID_UC_G0", "year"],
             expected_months=12,
-            completeness_column="is_complete_year"
+            completeness_column="is_complete_year",
+            minimum_valid_months=quality_control.min_valid_months_per_year,
+            quality_period="year"
         )
         .sort_values(["ID_UC_G0", "year"], kind="stable")
         .reset_index(drop=True)

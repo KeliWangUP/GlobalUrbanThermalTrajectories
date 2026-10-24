@@ -52,13 +52,25 @@ def main() -> None:
         print(f"[JOIN] Building monthly SUHI for {year}", flush=True)
         urban = pd.read_parquet(urban_files[year])
         rural = pd.read_parquet(rural_files[year])
-        monthly = build_monthly_suhi(urban, rural, year)
+        monthly = build_monthly_suhi(
+            urban,
+            rural,
+            year,
+            config.quality_control
+        )
         yearly_panels.append(monthly)
         print(
             f"  rows={len(monthly):,}; "
             f"cities={monthly['ID_UC_G0'].nunique():,}",
             flush=True
         )
+        for slot in LST_SLOTS:
+            passed_rows = int(monthly[f"qc_pass_{slot}"].sum())
+            print(
+                f"  QC {slot}: {passed_rows:,}/{len(monthly):,} "
+                "city-months passed",
+                flush=True
+            )
 
     monthly_panel = pd.concat(yearly_panels, ignore_index=True)
     if monthly_panel.duplicated(KEY_COLUMNS).any():
@@ -68,8 +80,14 @@ def main() -> None:
         kind="stable"
     ).reset_index(drop=True)
 
-    seasonal_panel = aggregate_seasonal_suhi(monthly_panel)
-    annual_panel = aggregate_annual_suhi(monthly_panel)
+    seasonal_panel = aggregate_seasonal_suhi(
+        monthly_panel,
+        config.quality_control
+    )
+    annual_panel = aggregate_annual_suhi(
+        monthly_panel,
+        config.quality_control
+    )
 
     outputs = (
         (config.monthly_suhi_file, monthly_panel),
