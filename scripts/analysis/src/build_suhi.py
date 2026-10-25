@@ -9,12 +9,23 @@ from src.config import QualityControlConfig
 KEY_COLUMNS = ["ID_UC_G0", "year", "month"]
 LST_SLOTS = ("terra_day", "terra_night", "aqua_day", "aqua_night")
 LST_MEAN_COLUMNS = [f"{slot}_mean" for slot in LST_SLOTS]
+SUHI_COLUMNS = [f"suhi_{slot}_mean" for slot in LST_SLOTS]
+DERIVED_SUHI_COLUMNS = ["A_T", "A_A", "M_T", "M_A"]
 PANEL_VALUE_COLUMNS = [
     f"{side}_{slot}_mean"
     for slot in LST_SLOTS
     for side in ("urban", "rural")
-] + [f"suhi_{slot}_mean" for slot in LST_SLOTS]
-SUHI_COLUMNS = [f"suhi_{slot}_mean" for slot in LST_SLOTS]
+] + SUHI_COLUMNS + DERIVED_SUHI_COLUMNS
+VALID_MONTH_COUNT_COLUMNS = {
+    **{
+        f"suhi_{slot}_mean": f"n_valid_months_{slot}"
+        for slot in LST_SLOTS
+    },
+    **{
+        metric: f"n_valid_months_{metric}"
+        for metric in DERIVED_SUHI_COLUMNS
+    }
+}
 SEASON_BY_MONTH = {
     12: "DJF",
     1: "DJF",
@@ -141,7 +152,37 @@ def build_monthly_suhi(
         joined[f"suhi_{slot}_mean"] = (
             joined[urban_mean_column] - joined[rural_mean_column]
         )
+    add_derived_suhi_metrics(joined, "qc_pass_")
     return joined.sort_values(KEY_COLUMNS, kind="stable").reset_index(drop=True)
+
+
+def add_derived_suhi_metrics(
+    panel: pd.DataFrame,
+    qc_flag_prefix: str
+) -> None:
+    """Add day/night contrasts and means using QC-paired monthly SUHI values."""
+    panel["A_T"] = (
+        panel["suhi_terra_day_mean"] - panel["suhi_terra_night_mean"]
+    )
+    panel["A_A"] = (
+        panel["suhi_aqua_day_mean"] - panel["suhi_aqua_night_mean"]
+    )
+    panel["M_T"] = (
+        panel["suhi_terra_day_mean"] + panel["suhi_terra_night_mean"]
+    ) / 2
+    panel["M_A"] = (
+        panel["suhi_aqua_day_mean"] + panel["suhi_aqua_night_mean"]
+    ) / 2
+    panel["qc_pass_A_T"] = (
+        panel[f"{qc_flag_prefix}terra_day"]
+        & panel[f"{qc_flag_prefix}terra_night"]
+    )
+    panel["qc_pass_A_A"] = (
+        panel[f"{qc_flag_prefix}aqua_day"]
+        & panel[f"{qc_flag_prefix}aqua_night"]
+    )
+    panel["qc_pass_M_T"] = panel["qc_pass_A_T"]
+    panel["qc_pass_M_A"] = panel["qc_pass_A_A"]
 
 
 def _aggregate_monthly_values(
@@ -155,12 +196,9 @@ def _aggregate_monthly_values(
     grouped = panel.groupby(group_columns, sort=True, observed=True)
     means = grouped[PANEL_VALUE_COLUMNS].mean().reset_index()
     valid_counts = (
-        grouped[SUHI_COLUMNS]
+        grouped[list(VALID_MONTH_COUNT_COLUMNS)]
         .count()
-        .rename(columns={
-            f"suhi_{slot}_mean": f"n_valid_months_{slot}"
-            for slot in LST_SLOTS
-        })
+        .rename(columns=VALID_MONTH_COUNT_COLUMNS)
         .reset_index()
     )
     calendar_counts = (
@@ -189,6 +227,12 @@ def _aggregate_monthly_values(
         for side in ("urban", "rural"):
             result.loc[~qc_pass, f"{side}_{slot}_mean"] = float("nan")
         result.loc[~qc_pass, f"suhi_{slot}_mean"] = float("nan")
+    for metric in DERIVED_SUHI_COLUMNS:
+        qc_pass = (
+            result[f"n_valid_months_{metric}"] >= minimum_valid_months
+        )
+        result[f"qc_pass_{quality_period}_{metric}"] = qc_pass
+        result.loc[~qc_pass, metric] = float("nan")
     return result
 
 

@@ -44,13 +44,29 @@ per source year. The second step joins rural rows to urban rows on
 `ID_UC_G0`, `year`, and `month`, then calculates each monthly SUHI as urban
 mean LST minus rural mean LST for Terra/Aqua day/night.
 
+`suhi_monthly.parquet` is the master analysis table. In addition to the four
+slot-level SUHI columns (`suhi_terra_day_mean`, `suhi_terra_night_mean`,
+`suhi_aqua_day_mean`, and `suhi_aqua_night_mean`), it includes:
+
+```text
+A_T = suhi_terra_day_mean - suhi_terra_night_mean
+A_A = suhi_aqua_day_mean - suhi_aqua_night_mean
+M_T = (suhi_terra_day_mean + suhi_terra_night_mean) / 2
+M_A = (suhi_aqua_day_mean + suhi_aqua_night_mean) / 2
+```
+
+Each derived value requires both corresponding day and night SUHI values to
+pass QC. Seasonal and annual versions are equal-month averages of the derived
+monthly values, so each uses months with valid paired day/night observations.
+
 Seasonal groups use fixed meteorological months: DJF, MAM, JJA, and SON.
 December belongs to the following season year. Seasonal and annual means give
 each available monthly value equal weight. Outputs include valid-SUHI-month
-counts and completeness flags. A season is marked QC-pass per slot with at
-least 2 valid months; a year requires at least 9. Boundary DJF groups remain
-present and are separately marked incomplete when fewer than three calendar
-months are available. Seasonal and annual values are null when their per-slot
-minimum number of QC-passing months is not reached.
+counts for each slot and derived metric, along with completeness flags. A
+season is marked QC-pass per metric with at least 2 valid months; a year
+requires at least 9. Boundary DJF groups remain present and are separately
+marked incomplete when fewer than three calendar months are available.
+Seasonal and annual values are null when their per-metric minimum number of
+QC-passing months is not reached.
 LST mean columns are already in degrees Celsius in the GEE exports, so no
 additional unit conversion is applied here.
