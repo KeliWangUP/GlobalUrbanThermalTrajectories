@@ -155,12 +155,13 @@ data/
 │   ├── urban/
 │   ├── rural/                    # 旧优先城市数据，非当前全量输入
 │   ├── rural_all_cities/         # 当前配置的乡村全量输入目录
-│   └── GHSL_bounds_shp/          # 城市边界 Shapefile（原始投影）
+│   ├── GHSL_bounds_shp/          # 城市边界 Shapefile（原始投影）
+│   └── Beck_KG_V1_present_0p0083.tif  # Köppen-Geiger 现状气候分类
 ├── parquet/                      # 按年清洗后的 Parquet
 │   ├── urban/
 │   └── rural/
 └── processed/
-    ├── city_metadata.parquet     # ID_UC_G0 + centroid_lat lookup
+    ├── city_metadata.parquet     # city centroid + Köppen-Geiger lookup
     ├── suhi_monthly.parquet      # master analysis table
     ├── suhi_seasonal.parquet
     └── suhi_annual.parquet
@@ -199,14 +200,34 @@ python scripts/analysis/02_build_monthly_suhi.py
 城乡 Parquet，以 `ID_UC_G0 + year + month` 关联，并验证城乡测量字段结构一致。
 每个槽的 QC 分别对 urban 和 rural 两侧同时检查：
 
+如需先独立生成城市元数据（不依赖 SUHI 面板），可运行：
+
+```bash
+python scripts/analysis/build_city_metadata.py
+```
+
 此步骤还从 `paths.city_bounds_shapefile` 指向的本地 GHSL 2024 Shapefile
-生成两列城市元数据表：`ID_UC_G0` 和 `centroid_lat`。当前边界源文件采用
-World Mollweide（ESRI:54009）投影；程序先在原始投影下计算 polygon centroid，
-再将 centroid 点转换到 EPSG:4326 取纬度，避免直接在经纬度下求多边形质心。
-无效几何会使用 `make_valid` 修复后再计算，并报告修复数量。元数据单独保存为
-`data/processed/city_metadata.parquet`，再按 `ID_UC_G0` 合并到月度、季节和年度
-SUHI Parquet。关联按 many-to-one 校验；若分析记录中的城市 ID 无法匹配边界，
-流程会报错而不是留下空纬度。原始 Shapefile 与 CSV 都不修改。
+生成城市元数据。当前边界源文件采用 World Mollweide（ESRI:54009）投影；
+程序先在原始投影下计算 polygon centroid，再将 centroid 点转换到 EPSG:4326，
+避免直接在经纬度下求多边形质心。无效几何使用 `make_valid` 修复，并报告数量。
+之后以质心经纬度在 `paths.koppen_geiger_raster` 配置的 Beck Köppen-Geiger 栅格
+采样气候区。该栅格为 EPSG:4326、约 0.0083°（约赤道处 1 km）单波段分类图；
+其现状分类基于 1980–2016。城市级 lookup 写入
+`data/processed/city_metadata.parquet`，包含 `ID_UC_G0`、`centroid_lat`、
+`koppen_geiger_code`（1–30 原始类别编号）和 `koppen_geiger_class`（如 Af、Cfa、
+ET），以及按配置中 `cz_macro_groups` 派生的
+`koppen_geiger_macro_group` 大类。大类覆盖全部 1–30 原始类别且每个编号只属于
+一个大类；栅格像元值 0 表示无分类/无数据，三个气候字段在该城市保留为空。
+程序报告有气候分类的城市数。已观测到 11,422 个边界城市中有 66 个质心采样到
+0 类。
+
+这份 metadata 按 `ID_UC_G0` many-to-one 合并到月度、季节和年度 SUHI Parquet。
+若分析记录中的城市 ID 无法匹配边界，流程会报错，而不是留下空质心。运行
+`04_merge_city_metadata.py` 时会根据配置的边界和栅格重新生成 metadata lookup，
+并刷新现有三个 SUHI Parquet 中对应的城市元数据，不需要重新构建年度源 Parquet。
+原始 Shapefile、CSV 和 TIFF 均不修改。气候分类数据来源为 Beck et al. 2018，
+*Present and future Köppen-Geiger climate classification maps at 1-km resolution*,
+[Scientific Data 5, 180214](https://doi.org/10.1038/sdata.2018.214)。
 
 `centroid_lat` 可用于后续纬度分组；本项目当前 EDA 将 `-10°` 至 `10°`
 （含边界）设为赤道纬度带，具体阈值见 `eda.equatorial_latitude_band_degrees`。
@@ -358,6 +379,31 @@ python scripts/analysis/eda_city_slopes.py
 零值参考线和 `βD = βN` 参考线。输出位于
 `results/figures/eda/city_slope_scatter/<sensor>/<latitude_group>/`。
 
+### 5.8 第六项 EDA：Climate × local-season Month 趋势统计热图
+
+单独运行：
+
+```bash
+python scripts/analysis/eda_climate_month_trends.py
+```
+
+也可通过 `03_eda.py` 一并运行。先按城市、传感器和月份，基于各传感器昼夜配对
+QC 通过的年度观测拟合城市级 OLS 斜率；D/N 使用对应昼间、夜间 SUHI，A 使用已
+存储的 `A_T` / `A_A`。每个城市—月达到 `eda.min_city_slope_years`（当前 15 个）
+有效年份后才纳入汇总。南半球月份平移 6 个月，跨 12 月时对齐年加 1；北半球和
+赤道纬度带保持原月。之后按 `cz_macro_groups` 中的大气候区和对齐后的 local
+month 汇总，所以北/南半球城市会按月对齐后进入同一 Climate × Month 矩阵。
+
+每个大区 × 月单元格分别计算城市级 βD、βN、βA 的中位数，并以城市为单位做
+百分位 bootstrap，得到跨城市中位数的配置置信区间（默认 95%）。该 CI 描述城市
+斜率中位数的不确定性，不等于单个城市回归斜率的 CI。每个传感器分别输出 βD、
+βN、βA 三张热图，总计 6 张；格内标注斜率中位数、城市数，贡献城市至少 2 个且
+CI 不跨 0 时附星号。并输出包含中位数、CI 上下界、样本城市数、置信水平和
+bootstrap 次数的长表 CSV。结果位于
+`results/figures/eda/climate_month_trend_heatmaps/`。Bootstrap 次数、置信水平和
+随机种子沿用 `eda.bootstrap_replicates`、`eda.bootstrap_confidence_level`、
+`eda.bootstrap_random_seed` 配置。
+
 ## 6. 当前实现与数据状态
 
 - 旧的 1,700 个优先城市分析曾生成 510,000 行月度、171,700 行季节和
@@ -367,16 +413,19 @@ python scripts/analysis/eda_city_slopes.py
 - 已从本地 GHSL Shapefile 生成
   [`city_metadata.parquet`](./data/processed/city_metadata.parquet)：11,422 个唯一
   `ID_UC_G0`，`centroid_lat` 范围为 -54.809232° 至 69.660579°；22 个无效几何
-  在质心计算前使用 `make_valid` 修复。运行 `02_build_monthly_suhi.py` 时会重新
-  生成这份 lookup，并合并到月度、季节和年度 SUHI 输出。
+  在质心计算前使用 `make_valid` 修复。气候大类由 `cz_macro_groups` 配置，
+  运行 `02_build_monthly_suhi.py` 时会重新生成 lookup 并合并到月度、季节和年度
+  SUHI 输出。当前 11,356 个有分类的城市已分入六个大类，66 个质心仍落在无分类
+  像元。
 - 当前环境尚未生成年度 clean Parquet 与 SUHI master/聚合表。将匹配年份的
   全量 rural 年度 CSV 放入配置目录后，运行本地预处理即可生成。
 - [`scripts/analysis/03_eda.py`](./scripts/analysis/03_eda.py) 已实现 Terra/Aqua
   昼夜 SUHI 日历月汇总、逐年分面、local-season 分纬度组图和年度 D/N/A/M 中位数
-  及 bootstrap CI，以及城市级 `(βD, βN)` 年趋势散点；五类 EDA 也可
+  及 bootstrap CI、城市级 `(βD, βN)` 年趋势散点，以及 Climate × local-season
+  Month 的 βD/βN/βA 趋势统计热图；六类 EDA 也可
   分别由 `eda_calendar_months.py`、`eda_yearly_panels.py` 和
-  `eda_local_season.py`、`eda_yearly_trends.py`、`eda_city_slopes.py` 独立运行。
-  其他系统化 EDA 和统计建模尚未实现。
+  `eda_local_season.py`、`eda_yearly_trends.py`、`eda_city_slopes.py`、
+  `eda_climate_month_trends.py` 独立运行。其他系统化 EDA 和统计建模尚未实现。
 
 ## 7. 后续分析路线（待开展，不属于当前已完成处理）
 

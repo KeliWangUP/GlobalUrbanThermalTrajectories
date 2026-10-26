@@ -36,12 +36,14 @@ class AnalysisConfig:
     seasonal_suhi_file: Path
     annual_suhi_file: Path
     city_bounds_shapefile: Path
+    koppen_geiger_raster: Path
     city_metadata_file: Path
     eda_figure_dir: Path
     eda_log_dir: Path
     parquet_compression: str
     eda: EdaConfig
     quality_control: QualityControlConfig
+    cz_macro_groups: dict[str, tuple[int, ...]]
 
 
 def _require_object(value: object, name: str) -> dict[str, object]:
@@ -96,6 +98,48 @@ def _require_nonnegative_number(
     return number
 
 
+def _require_cz_macro_groups(
+    value: object
+) -> dict[str, tuple[int, ...]]:
+    if not isinstance(value, dict) or not value:
+        raise ValueError(
+            "Analysis config field 'cz_macro_groups' must be a JSON object."
+        )
+
+    groups: dict[str, tuple[int, ...]] = {}
+    assigned_codes: list[int] = []
+    for name, codes in value.items():
+        if not isinstance(name, str) or not name.strip():
+            raise ValueError(
+                "Climate macro-group names must be non-empty strings."
+            )
+        if not isinstance(codes, list) or not codes:
+            raise ValueError(
+                f"Climate macro-group '{name}' must contain a code list."
+            )
+        if any(
+            isinstance(code, bool)
+            or not isinstance(code, int)
+            or code not in range(1, 31)
+            for code in codes
+        ):
+            raise ValueError(
+                f"Climate macro-group '{name}' contains an invalid class code."
+            )
+        groups[name] = tuple(codes)
+        assigned_codes.extend(codes)
+
+    if len(assigned_codes) != len(set(assigned_codes)):
+        raise ValueError("Köppen-Geiger class codes appear in multiple groups.")
+    if set(assigned_codes) != set(range(1, 31)):
+        missing = sorted(set(range(1, 31)) - set(assigned_codes))
+        raise ValueError(
+            "Climate macro-groups must cover class codes 1..30 exactly once; "
+            f"missing codes: {missing}."
+        )
+    return groups
+
+
 def _resolve_path(config_file: Path, value: str) -> Path:
     path = Path(value).expanduser()
     if not path.is_absolute():
@@ -115,6 +159,9 @@ def load_analysis_config(config_path: Path | None = None) -> AnalysisConfig:
     quality_control_data = _require_object(
         root.get("quality_control"),
         "quality_control"
+    )
+    cz_macro_groups = _require_cz_macro_groups(
+        root.get("cz_macro_groups")
     )
     eda_start_year = _require_integer(eda_data, "start_year", 1, 9999)
     eda_end_year = _require_integer(eda_data, "end_year", 1, 9999)
@@ -169,6 +216,9 @@ def load_analysis_config(config_path: Path | None = None) -> AnalysisConfig:
         ),
         city_bounds_shapefile=_resolve_path(
             config_file, _require_string(paths, "city_bounds_shapefile")
+        ),
+        koppen_geiger_raster=_resolve_path(
+            config_file, _require_string(paths, "koppen_geiger_raster")
         ),
         city_metadata_file=_resolve_path(
             config_file, _require_string(paths, "city_metadata_file")
@@ -235,5 +285,6 @@ def load_analysis_config(config_path: Path | None = None) -> AnalysisConfig:
                 1,
                 12
             )
-        )
+        ),
+        cz_macro_groups=cz_macro_groups
     )

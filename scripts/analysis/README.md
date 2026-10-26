@@ -11,7 +11,8 @@ data/
 │   ├── urban/
 │   ├── rural/
 │   ├── rural_all_cities/
-│   └── GHSL_bounds_shp/
+│   ├── GHSL_bounds_shp/
+│   └── Beck_KG_V1_present_0p0083.tif
 ├── parquet/
 │   ├── urban/
 │   └── rural/
@@ -55,17 +56,38 @@ preserves empty measurements as nulls, and writes one compressed Parquet file
 per source year. The second step joins rural rows to urban rows on
 `ID_UC_G0`, `year`, and `month`, then calculates each monthly SUHI as urban
 mean LST minus rural mean LST for Terra/Aqua day/night.
-It also reads the configured local city-boundary shapefile, calculates each
-polygon centroid in the source projected CRS, transforms that point to
-EPSG:4326, and writes an `ID_UC_G0`/`centroid_lat` lookup table to
-`data/processed/city_metadata.parquet`. The lookup is merged by `ID_UC_G0`
-into the monthly, seasonal, and annual analysis Parquets. Raw CSVs and the
-source shapefile are not modified. Invalid polygon geometries are repaired
-with `make_valid` for centroid calculation, and the repaired count is printed.
-If the three SUHI Parquets already exist without `centroid_lat`, run
-`04_merge_city_metadata.py` to enrich them in place without rebuilding from
-yearly source files. This merge is repeatable and replaces any old
-`centroid_lat` value with the configured metadata lookup.
+It also reads the configured local city-boundary shapefile, repairs invalid
+geometries when necessary, calculates polygon centroids in the source
+projected CRS, then transforms those points to EPSG:4326. It samples
+`Beck_KG_V1_present_0p0083.tif` at each centroid and writes the lookup fields
+`ID_UC_G0`, `centroid_lat`, `koppen_geiger_code`, `koppen_geiger_class`, and
+`koppen_geiger_macro_group` to `data/processed/city_metadata.parquet`. The
+climate raster is the Beck et al.
+present-day Köppen-Geiger map at approximately 1-km resolution
+(1980–2016; EPSG:4326). Raster code 0 is an unclassified/no-data pixel and is
+stored as null in all climate columns. The lookup is merged by `ID_UC_G0`
+into the monthly, seasonal, and annual analysis Parquets; class coverage is
+reported. Raw CSVs, the source shapefile, and the climate raster are not
+modified.
+
+The configured `cz_macro_groups` maps all 30 raster class codes to one
+macroclimate group. Its derived field, `koppen_geiger_macro_group`, is stored
+alongside the original class code and label; a code-0/no-data centroid has null
+values in all three climate fields.
+
+If the three SUHI Parquets already exist, run `04_merge_city_metadata.py` to
+rebuild the configured metadata lookup and refresh all city metadata columns
+in the monthly, seasonal, and annual files, without rebuilding yearly source
+Parquets. This merge is repeatable and replaces old centroid or climate values
+from the authoritative shapefile and raster.
+
+To create or refresh the city lookup without rebuilding SUHI data, run:
+
+```bash
+python scripts/analysis/build_city_metadata.py
+```
+
+To refresh the metadata and also merge it into existing SUHI files, run:
 
 ```bash
 python scripts/analysis/04_merge_city_metadata.py
@@ -121,7 +143,7 @@ repository-root `logs/` directory. The directory is created automatically;
 `01_convert_exports.py` and `02_build_monthly_suhi.py` still log to the
 terminal only.
 
-`03_eda.py` runs all five EDA modules. Each can also be run independently:
+`03_eda.py` runs all six EDA modules. Each can also be run independently:
 
 ```bash
 python scripts/analysis/eda_calendar_months.py
@@ -129,6 +151,7 @@ python scripts/analysis/eda_yearly_panels.py
 python scripts/analysis/eda_local_season.py
 python scripts/analysis/eda_yearly_trends.py
 python scripts/analysis/eda_city_slopes.py
+python scripts/analysis/eda_climate_month_trends.py
 ```
 
 The local-season module uses `centroid_lat` to group cities into Northern
@@ -183,4 +206,30 @@ valid years are logged. Run this module independently with:
 
 ```bash
 python scripts/analysis/eda_city_slopes.py
+```
+
+The climate × month trend heatmaps use the configured Köppen-Geiger macro
+groups and the same minimum-year rule as the city-slope plots. For each city,
+sensor, and month, OLS slopes for D and N are fitted from paired-QC annual
+observations; the slope of stored A (`A_T`/`A_A`) is fitted on the same paired
+observations. Southern cities shift by six months and advance the aligned year
+when crossing December. Northern and Equatorial Belt cities keep calendar
+months. All cities are then combined by macroclimate group and aligned
+local-season month.
+
+For every climate group × local month cell, each of βD, βN, and βA is
+summarized as the median of eligible city slopes, with a percentile bootstrap
+CI across cities. Eligibility requires `min_city_slope_years` valid years.
+The asterisk is shown only when at least two cities contribute and the
+configured CI excludes zero.
+There are six heatmaps (two sensors × three slope metrics); each shows the
+median slope, city count, and the asterisk rule above. Bootstrap settings are
+shared with the annual trend EDA. A long-form CSV containing cell medians, CI
+bounds, city counts, confidence level, and bootstrap replicate count is saved
+alongside the figures under
+`results/figures/eda/climate_month_trend_heatmaps/`.
+Run the module independently with:
+
+```bash
+python scripts/analysis/eda_climate_month_trends.py
 ```

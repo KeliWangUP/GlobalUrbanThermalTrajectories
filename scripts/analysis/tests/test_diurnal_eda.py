@@ -14,11 +14,15 @@ from src.diurnal_eda import (
 )
 from src.eda_logging import configure_eda_logging
 from src.eda_city_slopes import calculate_city_month_slopes
+from src.eda_climate_month_trends import summarize_climate_month_slopes
 from src.eda_trends import annual_sensor_trend_summary
 from src.eda_visualizations.calendar_month import (
     create_calendar_month_figures
 )
 from src.eda_visualizations.city_slopes import create_city_slope_figures
+from src.eda_visualizations.climate_month_trends import (
+    create_climate_month_trend_heatmaps
+)
 from src.eda_visualizations.common import (
     create_year_grid,
     symmetric_axis_limits
@@ -335,6 +339,136 @@ class DiurnalEdaTests(unittest.TestCase):
                     "northern_hemisphere",
                     "southern_hemisphere",
                     "equatorial_belt"
+                }
+            )
+
+    def test_climate_month_summary_aligns_south_and_summarizes_beta_a(
+        self
+    ) -> None:
+        records = []
+        for city_id, latitude, source_month, beta_day, beta_night in (
+            (1, 20.0, 1, 1.0, 2.0),
+            (2, -20.0, 7, 3.0, 4.0)
+        ):
+            for year in range(2000, 2015):
+                elapsed = year - 2000
+                day = city_id + beta_day * elapsed / 10
+                night = city_id + beta_night * elapsed / 10
+                records.append({
+                    "ID_UC_G0": city_id,
+                    "year": year,
+                    "month": source_month,
+                    "centroid_lat": latitude,
+                    "koppen_geiger_macro_group": "Tropical",
+                    "suhi_terra_day_mean": day,
+                    "suhi_terra_night_mean": night,
+                    "A_T": day - night,
+                    "qc_pass_A_T": True
+                })
+
+        summary = summarize_climate_month_slopes(
+            pd.DataFrame(records),
+            "terra",
+            2000,
+            2014,
+            10,
+            15,
+            ("Tropical", "Arid"),
+            100,
+            0.95,
+            42
+        )
+        tropical_january = summary.loc[
+            summary["koppen_geiger_macro_group"].eq("Tropical")
+            & summary["month"].eq(1)
+        ].iloc[0]
+
+        self.assertEqual(tropical_january["n_cities"], 2)
+        self.assertAlmostEqual(tropical_january["median_beta_day"], 2.0)
+        self.assertAlmostEqual(tropical_january["median_beta_night"], 3.0)
+        self.assertAlmostEqual(tropical_january["median_beta_asymmetry"], -1.0)
+        self.assertLessEqual(
+            tropical_january["ci_lower_beta_asymmetry"],
+            -1.0
+        )
+        self.assertGreaterEqual(
+            tropical_january["ci_upper_beta_asymmetry"],
+            -1.0
+        )
+        arid_january = summary.loc[
+            summary["koppen_geiger_macro_group"].eq("Arid")
+            & summary["month"].eq(1)
+        ].iloc[0]
+        self.assertEqual(arid_january["n_cities"], 0)
+
+    def test_climate_month_heatmaps_write_six_figures_and_statistics(
+        self
+    ) -> None:
+        records = []
+        climate_groups = ("Tropical", "Arid")
+        for city_id, latitude, climate_group, source_month in (
+            (1, 20.0, "Tropical", 1),
+            (2, -20.0, "Arid", 7)
+        ):
+            for year in range(2000, 2015):
+                elapsed = year - 2000
+                record = {
+                    "ID_UC_G0": city_id,
+                    "year": year,
+                    "month": source_month,
+                    "centroid_lat": latitude,
+                    "koppen_geiger_macro_group": climate_group,
+                    "qc_pass_A_T": True,
+                    "qc_pass_A_A": True
+                }
+                for sensor, offset in (("terra", 0.0), ("aqua", 1.0)):
+                    day = offset + 0.1 * elapsed
+                    night = offset - 0.05 * elapsed
+                    record[f"suhi_{sensor}_day_mean"] = day
+                    record[f"suhi_{sensor}_night_mean"] = night
+                    record["A_T" if sensor == "terra" else "A_A"] = (
+                        day - night
+                    )
+                records.append(record)
+
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            outputs = create_climate_month_trend_heatmaps(
+                panel=pd.DataFrame(records),
+                output_dir=Path(temporary_dir),
+                start_year=2000,
+                end_year=2014,
+                equatorial_band_degrees=10,
+                minimum_years=15,
+                climate_groups=climate_groups,
+                bootstrap_replicates=100,
+                confidence_level=0.95,
+                random_seed=42,
+                dpi=30
+            )
+            statistics_path = (
+                Path(temporary_dir)
+                / "climate_month_trend_heatmaps"
+                / "climate_month_D_N_A_trend_statistics_2000-2014.csv"
+            )
+            self.assertEqual(len(outputs), 6)
+            self.assertTrue(all(path.is_file() for path in outputs))
+            self.assertTrue(statistics_path.is_file())
+            statistics = pd.read_csv(statistics_path)
+            self.assertEqual(set(statistics["sensor"]), {"terra", "aqua"})
+            self.assertEqual(set(statistics["confidence_level"]), {0.95})
+            self.assertEqual(set(statistics["bootstrap_replicates"]), {100})
+            self.assertEqual(
+                set(statistics["statistic"]),
+                {
+                    "median_beta_day",
+                    "ci_lower_beta_day",
+                    "ci_upper_beta_day",
+                    "median_beta_night",
+                    "ci_lower_beta_night",
+                    "ci_upper_beta_night",
+                    "median_beta_asymmetry",
+                    "ci_lower_beta_asymmetry",
+                    "ci_upper_beta_asymmetry"
                 }
             )
 

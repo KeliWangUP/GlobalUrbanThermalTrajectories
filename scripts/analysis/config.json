@@ -8,6 +8,7 @@
     "seasonal_suhi_file": "../../data/processed/suhi_seasonal.parquet",
     "annual_suhi_file": "../../data/processed/suhi_annual.parquet",
     "city_bounds_shapefile": "../../data/raw/GHSL_bounds_shp/urban_bounds_2024.shp",
+    "koppen_geiger_raster": "../../data/raw/Beck_KG_V1_present_0p0083.tif",
     "city_metadata_file": "../../data/processed/city_metadata.parquet",
     "eda_figure_dir": "../../results/figures/eda",
     "eda_log_dir": "../../logs"
@@ -32,5 +33,13 @@
     "min_n8day_mean_per_side_slot": 1.0,
     "min_valid_months_per_season": 2,
     "min_valid_months_per_year": 9
+  },
+  "cz_macro_groups": {
+    "Tropical": [1, 2, 3],
+    "Arid": [4, 5, 6, 7],
+    "Temperate": [9, 10, 11, 12, 13, 14, 15, 16],
+    "Continental": [18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28],
+    "Hot-summer Dry": [8, 17],
+    "Polar": [29, 30]
   }
 }

@@ -91,12 +91,19 @@ def main() -> None:
     )
 
     city_metadata, repaired_geometry_count = build_city_metadata(
-        config.city_bounds_shapefile
+        config.city_bounds_shapefile,
+        config.koppen_geiger_raster,
+        config.cz_macro_groups
     )
+    climate_class_count = int(city_metadata["koppen_geiger_code"].notna().sum())
+    climate_missing_count = len(city_metadata) - climate_class_count
     print(
         f"[CITY META] {len(city_metadata):,} cities loaded from "
         f"{config.city_bounds_shapefile}; "
-        f"{repaired_geometry_count:,} invalid geometries repaired.",
+        f"{repaired_geometry_count:,} invalid geometries repaired; "
+        f"{climate_class_count:,} climate classes sampled; "
+        f"{climate_missing_count:,} centroids on no-data pixels in "
+        f"{config.koppen_geiger_raster}.",
         flush=True
     )
     write_parquet_atomically(
@@ -109,9 +116,21 @@ def main() -> None:
         flush=True
     )
 
-    monthly_panel = merge_city_metadata(monthly_panel, city_metadata)
-    seasonal_panel = merge_city_metadata(seasonal_panel, city_metadata)
-    annual_panel = merge_city_metadata(annual_panel, city_metadata)
+    monthly_panel = merge_city_metadata(
+        monthly_panel,
+        city_metadata,
+        config.cz_macro_groups
+    )
+    seasonal_panel = merge_city_metadata(
+        seasonal_panel,
+        city_metadata,
+        config.cz_macro_groups
+    )
+    annual_panel = merge_city_metadata(
+        annual_panel,
+        city_metadata,
+        config.cz_macro_groups
+    )
 
     outputs = (
         (config.monthly_suhi_file, monthly_panel),
@@ -126,6 +145,8 @@ def main() -> None:
         )
         print(
             f"[OUTPUT] {output_path}: {len(frame):,} rows; "
+            f"climate macro group present="
+            f"{frame['koppen_geiger_class'].notna().sum():,}; "
             f"columns={len(frame.columns)}",
             flush=True
         )

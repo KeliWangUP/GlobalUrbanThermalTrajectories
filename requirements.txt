@@ -4,3 +4,4 @@ numpy>=1.23.2
 pyarrow>=19.0
 matplotlib>=3.8
 geopandas>=0.14
+rasterio>=1.3
