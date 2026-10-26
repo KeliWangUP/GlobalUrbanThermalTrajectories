@@ -11,11 +11,25 @@ from src.eda_city_slopes import calculate_city_month_slopes
 
 
 LOGGER = logging.getLogger("diurnal_eda")
-LATITUDE_GROUP_COLORS = {
-    "Northern Hemisphere": "#0072b2",
-    "Southern Hemisphere": "#d55e00",
-    "Equatorial Belt": "#009e73"
-}
+CLIMATE_GROUP_COLORS = (
+    "#009e73",
+    "#e69f00",
+    "#0072b2",
+    "#cc79a7",
+    "#d55e00",
+    "#56b4e9"
+)
+UNCLASSIFIED_COLOR = "#7f7f7f"
+CLIMATE_COLUMN = "koppen_geiger_macro_group"
+
+
+def _climate_colors(climate_groups: tuple[str, ...]) -> dict[str, str]:
+    if len(climate_groups) > len(CLIMATE_GROUP_COLORS):
+        raise ValueError(
+            "City-slope scatter supports at most "
+            f"{len(CLIMATE_GROUP_COLORS)} configured climate groups."
+        )
+    return dict(zip(climate_groups, CLIMATE_GROUP_COLORS))
 
 
 def _symmetric_slope_limits(
@@ -39,6 +53,7 @@ def _create_city_slope_grid(
     coverage: pd.DataFrame,
     sensor: str,
     latitude_group: str,
+    climate_groups: tuple[str, ...],
     start_year: int,
     end_year: int,
     minimum_years: int,
@@ -52,7 +67,7 @@ def _create_city_slope_grid(
         sharex=True,
         sharey=True
     )
-    color = LATITUDE_GROUP_COLORS[latitude_group]
+    climate_colors = _climate_colors(climate_groups)
 
     for month, axis in enumerate(axes.flat, start=1):
         month_slopes = slopes.loc[
@@ -74,15 +89,34 @@ def _create_city_slope_grid(
                 fontsize=8
             )
         else:
-            axis.scatter(
-                month_slopes["beta_day_per_decade"],
-                month_slopes["beta_night_per_decade"],
-                s=18,
-                alpha=0.55,
-                color=color,
-                edgecolors="none",
-                rasterized=True
-            )
+            for climate_group, color in climate_colors.items():
+                climate_slopes = month_slopes.loc[
+                    month_slopes[CLIMATE_COLUMN].eq(climate_group)
+                ]
+                if climate_slopes.empty:
+                    continue
+                axis.scatter(
+                    climate_slopes["beta_day_per_decade"],
+                    climate_slopes["beta_night_per_decade"],
+                    s=18,
+                    alpha=0.6,
+                    color=color,
+                    edgecolors="none",
+                    rasterized=True
+                )
+            unclassified = month_slopes.loc[
+                month_slopes[CLIMATE_COLUMN].isna()
+            ]
+            if not unclassified.empty:
+                axis.scatter(
+                    unclassified["beta_day_per_decade"],
+                    unclassified["beta_night_per_decade"],
+                    s=18,
+                    alpha=0.6,
+                    color=UNCLASSIFIED_COLOR,
+                    edgecolors="none",
+                    rasterized=True
+                )
             axis.text(
                 0.04,
                 0.96,
@@ -120,14 +154,29 @@ def _create_city_slope_grid(
             minimum_years
         )
 
-    group_handle = Line2D(
-        [0],
-        [0],
-        marker="o",
-        linestyle="none",
-        color=color,
-        label=latitude_group
-    )
+    group_handles = [
+        Line2D(
+            [0],
+            [0],
+            marker="o",
+            linestyle="none",
+            color=color,
+            label=group
+        )
+        for group, color in climate_colors.items()
+    ]
+    latitude_slopes = slopes.loc[
+        slopes["latitude_group"].eq(latitude_group)
+    ]
+    if latitude_slopes[CLIMATE_COLUMN].isna().any():
+        group_handles.append(Line2D(
+            [0],
+            [0],
+            marker="o",
+            linestyle="none",
+            color=UNCLASSIFIED_COLOR,
+            label="Unclassified"
+        ))
     diagonal_handle = Line2D(
         [0],
         [0],
@@ -143,10 +192,10 @@ def _create_city_slope_grid(
     figure.supxlabel("βD (°C per decade)")
     figure.supylabel("βN (°C per decade)")
     figure.legend(
-        handles=[group_handle, diagonal_handle],
+        handles=[*group_handles, diagonal_handle],
         loc="upper center",
         bbox_to_anchor=(0.5, 0.94),
-        ncol=2,
+        ncol=4,
         frameon=False
     )
     figure.tight_layout(rect=(0.04, 0.04, 0.97, 0.88))
@@ -160,9 +209,10 @@ def create_city_slope_figures(
     end_year: int,
     equatorial_band_degrees: float,
     minimum_years: int,
+    climate_groups: tuple[str, ...],
     dpi: int
 ) -> list[Path]:
-    """Plot city-specific annual D/N slopes by calendar month and latitude."""
+    """Plot city-specific D/N slopes by month, latitude group, and climate."""
     summaries = []
     for sensor in ("terra", "aqua"):
         slopes, coverage = calculate_city_month_slopes(
@@ -171,7 +221,8 @@ def create_city_slope_figures(
             start_year=start_year,
             end_year=end_year,
             equatorial_band_degrees=equatorial_band_degrees,
-            minimum_years=minimum_years
+            minimum_years=minimum_years,
+            climate_groups=climate_groups
         )
         summaries.append((sensor, slopes, coverage))
     lower, upper = _symmetric_slope_limits(
@@ -186,6 +237,7 @@ def create_city_slope_figures(
                 coverage=coverage,
                 sensor=sensor,
                 latitude_group=latitude_group,
+                climate_groups=climate_groups,
                 start_year=start_year,
                 end_year=end_year,
                 minimum_years=minimum_years,

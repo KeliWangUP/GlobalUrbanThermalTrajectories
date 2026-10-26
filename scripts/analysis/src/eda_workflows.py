@@ -100,7 +100,8 @@ def run_eda_workflow(workflow_name: str) -> None:
                 or "climate_month_trends" in workflows
             ),
             require_climate_macro_group=(
-                "climate_month_trends" in workflows
+                "city_slopes" in workflows
+                or "climate_month_trends" in workflows
             )
         )
         for workflow in workflows:
@@ -165,6 +166,7 @@ def run_eda_workflow(workflow_name: str) -> None:
                         config.eda.equatorial_latitude_band_degrees
                     ),
                     minimum_years=config.eda.min_city_slope_years,
+                    climate_groups=tuple(config.cz_macro_groups),
                     dpi=config.eda.figure_dpi
                 )
             else:

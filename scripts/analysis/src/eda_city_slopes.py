@@ -18,7 +18,8 @@ def calculate_city_month_slopes(
     start_year: int,
     end_year: int,
     equatorial_band_degrees: float,
-    minimum_years: int
+    minimum_years: int,
+    climate_groups: tuple[str, ...]
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Fit paired-QC city/month D and N slopes, scaled to SUHI per decade."""
     if sensor not in SENSOR_COLUMNS:
@@ -33,11 +34,14 @@ def calculate_city_month_slopes(
         raise ValueError(
             "minimum_years cannot exceed the configured number of years."
         )
+    if not climate_groups or len(climate_groups) != len(set(climate_groups)):
+        raise ValueError("climate_groups must contain unique group names.")
 
     sensor_columns = SENSOR_COLUMNS[sensor]
     required_columns = [
         *KEY_COLUMNS,
         "centroid_lat",
+        "koppen_geiger_macro_group",
         sensor_columns["day"],
         sensor_columns["night"],
         sensor_columns["qc"]
@@ -62,6 +66,15 @@ def calculate_city_month_slopes(
         raise TypeError(
             f"{sensor_columns['qc']} must contain boolean QC flags."
         )
+    unexpected_groups = (
+        set(period["koppen_geiger_macro_group"].dropna().unique())
+        - set(climate_groups)
+    )
+    if unexpected_groups:
+        raise ValueError(
+            "Monthly panel has climate macro-groups missing from config: "
+            f"{sorted(unexpected_groups)}"
+        )
 
     period = add_latitude_groups(period, equatorial_band_degrees)
     city_group_counts = period.groupby(CITY_COLUMN)[
@@ -69,6 +82,11 @@ def calculate_city_month_slopes(
     ].nunique(dropna=False)
     if city_group_counts.gt(1).any():
         raise ValueError("A city has inconsistent latitude group labels.")
+    city_climate_counts = period.groupby(CITY_COLUMN)[
+        "koppen_geiger_macro_group"
+    ].nunique(dropna=False)
+    if city_climate_counts.gt(1).any():
+        raise ValueError("A city has inconsistent climate macro-group labels.")
 
     value_columns = [sensor_columns["day"], sensor_columns["night"]]
     values = period[value_columns].apply(pd.to_numeric, errors="raise")
@@ -115,6 +133,9 @@ def calculate_city_month_slopes(
             records.append({
                 CITY_COLUMN: city_id,
                 "latitude_group": latitude_group,
+                "koppen_geiger_macro_group": (
+                    city_rows["koppen_geiger_macro_group"].iloc[0]
+                ),
                 MONTH_COLUMN: month,
                 "n_valid_years": year_count,
                 "beta_day_per_decade": beta_day * 10,
@@ -126,6 +147,7 @@ def calculate_city_month_slopes(
         columns=[
             CITY_COLUMN,
             "latitude_group",
+            "koppen_geiger_macro_group",
             MONTH_COLUMN,
             "n_valid_years",
             "beta_day_per_decade",

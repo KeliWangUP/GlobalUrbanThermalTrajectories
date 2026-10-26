@@ -374,9 +374,11 @@ python scripts/analysis/eda_city_slopes.py
 不计算斜率，并在日志中报告。
 
 每张图以 `βD` 为横轴、`βN` 为纵轴；按日历月份分成 12 个子图。Terra/Aqua
-分别作图，且北半球、南半球、赤道纬度带分别输出，避免将不同纬度组混在一起；
-每组仍使用固定颜色标识。共 6 张图，所有图采用一致的对称坐标范围，并显示
-零值参考线和 `βD = βN` 参考线。输出位于
+分别作图，且北半球、南半球、赤道纬度带仍分别输出，避免将不同纬度组混在一起；
+散点改按 `cz_macro_groups` 中的大气候区着色，未分类气候用灰色表示。共 6 张图，
+所有图采用一致的对称坐标范围，并显示零值参考线和 `βD = βN` 参考线。该图需要
+SUHI 表中已有 `koppen_geiger_macro_group` 列；如缺失，先运行
+`04_merge_city_metadata.py` 刷新元数据。输出位于
 `results/figures/eda/city_slope_scatter/<sensor>/<latitude_group>/`。
 
 ### 5.8 第六项 EDA：Climate × local-season Month 趋势统计热图

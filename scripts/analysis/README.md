@@ -198,11 +198,14 @@ day/night QC-passing observations. Its slopes are plotted as (βD, βN) in
 °C/decade. A city-month is included only when it has at least
 `min_city_slope_years` valid years (currently 15). It writes six figures
 (two sensors × three latitude groups); each figure has one panel per calendar
-month, with city points colored consistently by latitude group and separate
-figures for Northern Hemisphere, Southern Hemisphere, and Equatorial Belt.
-The panels share symmetric axes across all six figures, include zero
-crosshairs and a βD=βN reference. City counts and exclusions for insufficient
-valid years are logged. Run this module independently with:
+month. Figures remain separated into Northern Hemisphere, Southern
+Hemisphere, and Equatorial Belt, while points are colored by the configured
+Köppen-Geiger macroclimate group. Cities without a classified climate are
+shown in gray. The panels share symmetric axes across all six figures, include
+zero crosshairs and a βD=βN reference. City counts and exclusions for
+insufficient valid years are logged. The input SUHI table must include
+`koppen_geiger_macro_group`; run `04_merge_city_metadata.py` to add or refresh
+the metadata. Run this module independently with:
 
 ```bash
 python scripts/analysis/eda_city_slopes.py

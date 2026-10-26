@@ -4,6 +4,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
+from matplotlib.colors import to_rgba
 
 from src.diurnal_eda import (
     LATITUDE_GROUP_ORDER,
@@ -19,7 +20,12 @@ from src.eda_trends import annual_sensor_trend_summary
 from src.eda_visualizations.calendar_month import (
     create_calendar_month_figures
 )
-from src.eda_visualizations.city_slopes import create_city_slope_figures
+from src.eda_visualizations.city_slopes import (
+    CLIMATE_GROUP_COLORS,
+    UNCLASSIFIED_COLOR,
+    _create_city_slope_grid,
+    create_city_slope_figures
+)
 from src.eda_visualizations.climate_month_trends import (
     create_climate_month_trend_heatmaps
 )
@@ -261,6 +267,11 @@ class DiurnalEdaTests(unittest.TestCase):
                     "year": year,
                     "month": 1,
                     "centroid_lat": latitude,
+                    "koppen_geiger_macro_group": {
+                        1: "Tropical",
+                        2: "Arid",
+                        3: "Temperate"
+                    }[city_id],
                     "suhi_terra_day_mean": (
                         city_id + 0.2 * (year - 2000)
                     ),
@@ -276,13 +287,24 @@ class DiurnalEdaTests(unittest.TestCase):
             2000,
             2017,
             10,
-            15
+            15,
+            ("Tropical", "Arid", "Temperate")
         )
 
         self.assertEqual(len(slopes), 2)
         self.assertEqual(
             set(slopes["latitude_group"]),
             {"Northern Hemisphere", "Southern Hemisphere"}
+        )
+        self.assertEqual(
+            set(slopes["koppen_geiger_macro_group"]),
+            {"Tropical", "Arid"}
+        )
+        self.assertEqual(
+            slopes.set_index("ID_UC_G0")[
+                "koppen_geiger_macro_group"
+            ].to_dict(),
+            {1: "Tropical", 2: "Arid"}
         )
         self.assertTrue((slopes["n_valid_years"] >= 15).all())
         self.assertTrue(
@@ -308,6 +330,11 @@ class DiurnalEdaTests(unittest.TestCase):
                     "year": year,
                     "month": 1,
                     "centroid_lat": latitude,
+                    "koppen_geiger_macro_group": {
+                        1: "Tropical",
+                        2: "Arid",
+                        3: "Temperate"
+                    }[city_id],
                     "qc_pass_A_T": True,
                     "qc_pass_A_A": True
                 }
@@ -322,13 +349,14 @@ class DiurnalEdaTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary_dir:
             outputs = create_city_slope_figures(
-                pd.DataFrame(records),
-                Path(temporary_dir),
-                2000,
-                2014,
-                10,
-                15,
-                30
+                panel=pd.DataFrame(records),
+                output_dir=Path(temporary_dir),
+                start_year=2000,
+                end_year=2014,
+                equatorial_band_degrees=10,
+                minimum_years=15,
+                climate_groups=("Tropical", "Arid", "Temperate"),
+                dpi=30
             )
 
             self.assertEqual(len(outputs), 6)
@@ -341,6 +369,57 @@ class DiurnalEdaTests(unittest.TestCase):
                     "equatorial_belt"
                 }
             )
+
+    def test_city_slope_scatter_colors_points_by_climate_group(self) -> None:
+        slopes = pd.DataFrame({
+            "ID_UC_G0": [1, 2, 3],
+            "latitude_group": ["Northern Hemisphere"] * 3,
+            "koppen_geiger_macro_group": ["Tropical", "Arid", None],
+            "month": [1, 1, 1],
+            "beta_day_per_decade": [-0.2, 0.1, 0.3],
+            "beta_night_per_decade": [-0.1, 0.2, 0.4]
+        })
+        coverage = pd.DataFrame({
+            "latitude_group": ["Northern Hemisphere"] * 12,
+            "month": range(1, 13),
+            "n_cities_plotted": [3] + [0] * 11,
+            "n_cities_with_qc_data": [3] + [0] * 11,
+            "n_cities_below_minimum": [0] * 12
+        })
+        figure = _create_city_slope_grid(
+            slopes=slopes,
+            coverage=coverage,
+            sensor="terra",
+            latitude_group="Northern Hemisphere",
+            climate_groups=("Tropical", "Arid"),
+            start_year=2000,
+            end_year=2014,
+            minimum_years=15,
+            lower=-1,
+            upper=1
+        )
+        try:
+            collections = figure.axes[0].collections
+            self.assertEqual(len(collections), 3)
+            expected_colors = [
+                to_rgba(CLIMATE_GROUP_COLORS[0], alpha=0.6),
+                to_rgba(CLIMATE_GROUP_COLORS[1], alpha=0.6),
+                to_rgba(UNCLASSIFIED_COLOR, alpha=0.6)
+            ]
+            actual_colors = [
+                tuple(collection.get_facecolors()[0])
+                for collection in collections
+            ]
+            for actual, expected in zip(actual_colors, expected_colors):
+                self.assertEqual(actual, expected)
+            legend_labels = {
+                text.get_text() for text in figure.legends[0].get_texts()
+            }
+            self.assertTrue(
+                {"Tropical", "Arid", "Unclassified"} <= legend_labels
+            )
+        finally:
+            plt.close(figure)
 
     def test_climate_month_summary_aligns_south_and_summarizes_beta_a(
         self
