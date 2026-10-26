@@ -6,7 +6,8 @@ The preprocessing pipeline keeps the downloaded CSVs unchanged and creates:
 data/
 ├── raw/
 │   ├── urban/
-│   └── rural/
+│   ├── rural/
+│   └── rural_all_cities/
 ├── parquet/
 │   ├── urban/
 │   └── rural/
@@ -19,6 +20,11 @@ data/
 The existing `data/city` and `data/rural_1700` CSVs were copied byte-for-byte
 into the canonical raw folders; the original directories and ZIP archives are
 left untouched.
+
+The old priority-only rural CSVs remain in `data/raw/rural`. The analysis
+config now reads the replacement all-city exports from
+`data/raw/rural_all_cities`, so the two datasets are not mixed or mistaken for
+duplicate years.
 
 Input directories, output file paths, and Parquet compression are set in
 [`config.json`](./config.json). Relative paths in that file are resolved from
