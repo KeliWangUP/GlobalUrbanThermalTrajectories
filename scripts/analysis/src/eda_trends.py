@@ -13,7 +13,8 @@ from src.diurnal_eda import (
 
 
 ASYMMETRY_COLUMNS = {"terra": "A_T", "aqua": "A_A"}
-TREND_METRICS = ("day", "night", "asymmetry")
+MEAN_COLUMNS = {"terra": "M_T", "aqua": "M_A"}
+TREND_METRICS = ("day", "night", "asymmetry", "mean")
 BOOTSTRAP_BATCH_SIZE = 128
 
 
@@ -80,7 +81,8 @@ def annual_sensor_trend_summary(
     metric_columns = [
         sensor_columns["day"],
         sensor_columns["night"],
-        ASYMMETRY_COLUMNS[sensor]
+        ASYMMETRY_COLUMNS[sensor],
+        MEAN_COLUMNS[sensor]
     ]
     required_columns = [
         *KEY_COLUMNS,
@@ -116,7 +118,7 @@ def annual_sensor_trend_summary(
     values = valid[metric_columns].to_numpy(dtype="float64")
     if not np.isfinite(values).all():
         raise ValueError(
-            f"QC-passing {sensor} D/N/A values must all be finite."
+            f"QC-passing {sensor} D/N/A/M values must all be finite."
         )
     valid.loc[:, metric_columns] = values
     valid = valid.sort_values(

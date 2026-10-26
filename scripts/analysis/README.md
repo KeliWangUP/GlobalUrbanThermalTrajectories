@@ -151,13 +151,13 @@ Groups and sensors use common axis limits, with axes centered at zero and the
 the month summaries, and per-year QC counts are logged for year panels.
 
 The yearly trend EDA focuses on compact annual summaries rather than city
-scatter clouds. It uses the already stored city-month `A_T` and `A_A` values
+scatter clouds. It uses the stored city-month `A_T`/`A_A` and `M_T`/`M_A`
 alongside daytime and nighttime SUHI, and filters each sensor with its paired
 day/night QC flag. For each calendar month, year, sensor, and latitude group,
-it plots the cross-city median D, median N, and median A. A percentile
-bootstrap resamples cities within each year/month/group, keeping each city's
-D/N/A values together; the shaded bands show the configured confidence
-interval. These are annual cross-sectional intervals, not confidence
+it plots the cross-city median D, N, A, and M. A and M are read directly from
+the stored columns. Bootstrap resampling keeps each city's D/N/A/M values
+together; the shaded bands show the configured confidence interval. These are
+annual cross-sectional intervals, not confidence
 intervals for a fitted temporal slope. City sample-count ranges are shown in
 each month panel and logged.
 

@@ -14,12 +14,14 @@ LOGGER = logging.getLogger("diurnal_eda")
 METRIC_LABELS = {
     "day": "Median D",
     "night": "Median N",
-    "asymmetry": "Median A (D - N)"
+    "asymmetry": "Median A (D - N)",
+    "mean": "Median M (intensity)"
 }
 METRIC_COLORS = {
     "day": "#d55e00",
     "night": "#0072b2",
-    "asymmetry": "#009e73"
+    "asymmetry": "#009e73",
+    "mean": "#cc79a7"
 }
 
 
@@ -37,7 +39,7 @@ def _symmetric_limits(summaries: list[pd.DataFrame]) -> tuple[float, float]:
         if np.isfinite(value)
     ]
     if not values:
-        raise ValueError("No QC-passing annual D/N/A values are available.")
+        raise ValueError("No QC-passing annual D/N/A/M values are available.")
     limit = max(max(abs(value) for value in values) * 1.05, 0.25)
     return -limit, limit
 
@@ -172,7 +174,7 @@ def _create_trend_grid(
     ]
     confidence_percent = confidence_level * 100
     figure.suptitle(
-        f"{sensor.title()} {latitude_group}: annual median D, N, and A "
+        f"{sensor.title()} {latitude_group}: annual median D, N, A, and M "
         f"with {confidence_percent:g}% bootstrap CI",
         fontsize=14
     )
@@ -182,7 +184,7 @@ def _create_trend_grid(
         handles=handles,
         loc="upper center",
         bbox_to_anchor=(0.5, 0.94),
-        ncol=3,
+        ncol=4,
         frameon=False
     )
     figure.tight_layout(rect=(0.04, 0.04, 0.97, 0.88))
@@ -200,7 +202,7 @@ def create_yearly_trend_figures(
     random_seed: int,
     dpi: int
 ) -> list[Path]:
-    """Plot annual median D/N/A and city-bootstrap confidence bands."""
+    """Plot annual median D/N/A/M and city-bootstrap confidence bands."""
     summaries = []
     for sensor_index, sensor in enumerate(("terra", "aqua")):
         summaries.append(
@@ -235,7 +237,7 @@ def create_yearly_trend_figures(
             group_dir.mkdir(parents=True, exist_ok=True)
             confidence_percent = int(round(confidence_level * 100))
             output = group_dir / (
-                f"{sensor}_{group_slug}_median_D_N_A_"
+                f"{sensor}_{group_slug}_median_D_N_A_M_"
                 f"bootstrap_ci{confidence_percent}_"
                 f"{start_year}-{end_year}.png"
             )

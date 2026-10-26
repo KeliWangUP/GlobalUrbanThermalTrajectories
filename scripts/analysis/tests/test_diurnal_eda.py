@@ -169,9 +169,10 @@ class DiurnalEdaTests(unittest.TestCase):
             "year": [2000] * 3,
             "month": [1] * 3,
             "centroid_lat": [20.0] * 3,
-            "suhi_terra_day_mean": [1.0, 2.0, 100.0],
-            "suhi_terra_night_mean": [0.0, 100.0, 101.0],
-            "A_T": [1.0, -98.0, -1.0],
+            "suhi_terra_day_mean": [0.0, 10.0, 100.0],
+            "suhi_terra_night_mean": [100.0, 0.0, 10.0],
+            "A_T": [-100.0, 10.0, 90.0],
+            "M_T": [50.0, 5.0, 55.0],
             "qc_pass_A_T": [True] * 3
         })
 
@@ -191,11 +192,12 @@ class DiurnalEdaTests(unittest.TestCase):
         ].iloc[0]
 
         self.assertEqual(row["n_cities"], 3)
-        self.assertEqual(row["median_day"], 2.0)
-        self.assertEqual(row["median_night"], 100.0)
-        self.assertEqual(row["median_asymmetry"], -1.0)
-        self.assertLessEqual(row["ci_lower_asymmetry"], -1.0)
-        self.assertGreaterEqual(row["ci_upper_asymmetry"], -1.0)
+        self.assertEqual(row["median_day"], 10.0)
+        self.assertEqual(row["median_night"], 10.0)
+        self.assertEqual(row["median_asymmetry"], 10.0)
+        self.assertEqual(row["median_mean"], 50.0)
+        self.assertLessEqual(row["ci_lower_asymmetry"], 10.0)
+        self.assertGreaterEqual(row["ci_upper_asymmetry"], 10.0)
 
     def test_yearly_trend_figures_create_sensor_and_latitude_groups(self) -> None:
         panel = pd.DataFrame({
@@ -206,10 +208,12 @@ class DiurnalEdaTests(unittest.TestCase):
             "suhi_terra_day_mean": [2.0, 3.0, 4.0],
             "suhi_terra_night_mean": [1.0, 2.0, 2.0],
             "A_T": [1.0, 1.0, 2.0],
+            "M_T": [1.5, 2.5, 3.0],
             "qc_pass_A_T": [True] * 3,
             "suhi_aqua_day_mean": [3.0, 4.0, 5.0],
             "suhi_aqua_night_mean": [1.0, 2.0, 3.0],
             "A_A": [2.0, 2.0, 2.0],
+            "M_A": [2.0, 3.0, 4.0],
             "qc_pass_A_A": [True] * 3
         })
 
