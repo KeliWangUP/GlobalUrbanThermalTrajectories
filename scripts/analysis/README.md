@@ -121,13 +121,14 @@ repository-root `logs/` directory. The directory is created automatically;
 `01_convert_exports.py` and `02_build_monthly_suhi.py` still log to the
 terminal only.
 
-`03_eda.py` runs all four EDA modules. Each can also be run independently:
+`03_eda.py` runs all five EDA modules. Each can also be run independently:
 
 ```bash
 python scripts/analysis/eda_calendar_months.py
 python scripts/analysis/eda_yearly_panels.py
 python scripts/analysis/eda_local_season.py
 python scripts/analysis/eda_yearly_trends.py
+python scripts/analysis/eda_city_slopes.py
 ```
 
 The local-season module uses `centroid_lat` to group cities into Northern
@@ -167,3 +168,19 @@ Each trend figure is a 3×4 month grid with year on the x-axis. Six figures
 symmetric range across the six figures. Bootstrap repetitions, confidence
 level, and random seed are configured by `bootstrap_replicates`,
 `bootstrap_confidence_level`, and `bootstrap_random_seed` in `config.json`.
+
+The city-slope EDA fits a separate ordinary least-squares line over years for
+each city, calendar month, and sensor, using only that sensor's paired
+day/night QC-passing observations. Its slopes are plotted as (βD, βN) in
+°C/decade. A city-month is included only when it has at least
+`min_city_slope_years` valid years (currently 15). It writes six figures
+(two sensors × three latitude groups); each figure has one panel per calendar
+month, with city points colored consistently by latitude group and separate
+figures for Northern Hemisphere, Southern Hemisphere, and Equatorial Belt.
+The panels share symmetric axes across all six figures, include zero
+crosshairs and a βD=βN reference. City counts and exclusions for insufficient
+valid years are logged. Run this module independently with:
+
+```bash
+python scripts/analysis/eda_city_slopes.py
+```

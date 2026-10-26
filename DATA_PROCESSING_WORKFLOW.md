@@ -338,6 +338,26 @@ bootstrap 置信区间；每次抽样以城市为单位，同时抽取该城市 
 D/N/A/M 中位数趋势线。所有传感器和分组共用对称纵轴范围，便于比较；结果保存在
 `results/figures/eda/yearly_trends/<sensor>/<latitude_group>/`。
 
+### 5.7 第五项 EDA：城市级 (βD, βN) 年趋势斜率
+
+单独运行：
+
+```bash
+python scripts/analysis/eda_city_slopes.py
+```
+
+也可通过 `03_eda.py` 一并运行。对每个城市、传感器和日历月份，使用该传感器
+昼夜配对 QC 通过的年度记录，分别对 D（日间 SUHI）和 N（夜间 SUHI）与年份做
+普通最小二乘线性拟合，计算每十年变化量 `βD` 和 `βN`。一个城市—月份至少需要
+多少个有效年份由 `eda.min_city_slope_years` 配置，当前为 15；不足的城市—月份
+不计算斜率，并在日志中报告。
+
+每张图以 `βD` 为横轴、`βN` 为纵轴；按日历月份分成 12 个子图。Terra/Aqua
+分别作图，且北半球、南半球、赤道纬度带分别输出，避免将不同纬度组混在一起；
+每组仍使用固定颜色标识。共 6 张图，所有图采用一致的对称坐标范围，并显示
+零值参考线和 `βD = βN` 参考线。输出位于
+`results/figures/eda/city_slope_scatter/<sensor>/<latitude_group>/`。
+
 ## 6. 当前实现与数据状态
 
 - 旧的 1,700 个优先城市分析曾生成 510,000 行月度、171,700 行季节和
@@ -353,10 +373,10 @@ D/N/A/M 中位数趋势线。所有传感器和分组共用对称纵轴范围，
   全量 rural 年度 CSV 放入配置目录后，运行本地预处理即可生成。
 - [`scripts/analysis/03_eda.py`](./scripts/analysis/03_eda.py) 已实现 Terra/Aqua
   昼夜 SUHI 日历月汇总、逐年分面、local-season 分纬度组图和年度 D/N/A/M 中位数
-  及 bootstrap CI；四类 EDA 也可
+  及 bootstrap CI，以及城市级 `(βD, βN)` 年趋势散点；五类 EDA 也可
   分别由 `eda_calendar_months.py`、`eda_yearly_panels.py` 和
-  `eda_local_season.py`、`eda_yearly_trends.py` 独立运行。其他系统化 EDA 和统计
-  建模尚未实现。
+  `eda_local_season.py`、`eda_yearly_trends.py`、`eda_city_slopes.py` 独立运行。
+  其他系统化 EDA 和统计建模尚未实现。
 
 ## 7. 后续分析路线（待开展，不属于当前已完成处理）
 

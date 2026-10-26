@@ -13,10 +13,12 @@ from src.diurnal_eda import (
     prepare_sensor_year_month_rows
 )
 from src.eda_logging import configure_eda_logging
+from src.eda_city_slopes import calculate_city_month_slopes
 from src.eda_trends import annual_sensor_trend_summary
 from src.eda_visualizations.calendar_month import (
     create_calendar_month_figures
 )
+from src.eda_visualizations.city_slopes import create_city_slope_figures
 from src.eda_visualizations.common import (
     create_year_grid,
     symmetric_axis_limits
@@ -229,6 +231,102 @@ class DiurnalEdaTests(unittest.TestCase):
                 42,
                 30
             )
+            self.assertEqual(len(outputs), 6)
+            self.assertTrue(all(path.is_file() for path in outputs))
+            self.assertEqual(
+                {path.parent.name for path in outputs},
+                {
+                    "northern_hemisphere",
+                    "southern_hemisphere",
+                    "equatorial_belt"
+                }
+            )
+
+    def test_city_month_slopes_use_qc_years_and_are_scaled_per_decade(
+        self
+    ) -> None:
+        records = []
+        for city_id, latitude, valid_year_count in (
+            (1, 20.0, 18),
+            (2, -20.0, 18),
+            (3, 0.0, 14)
+        ):
+            for year in range(2000, 2000 + valid_year_count):
+                records.append({
+                    "ID_UC_G0": city_id,
+                    "year": year,
+                    "month": 1,
+                    "centroid_lat": latitude,
+                    "suhi_terra_day_mean": (
+                        city_id + 0.2 * (year - 2000)
+                    ),
+                    "suhi_terra_night_mean": (
+                        city_id - 0.1 * (year - 2000)
+                    ),
+                    "qc_pass_A_T": not (city_id == 1 and year == 2001)
+                })
+
+        slopes, coverage = calculate_city_month_slopes(
+            pd.DataFrame(records),
+            "terra",
+            2000,
+            2017,
+            10,
+            15
+        )
+
+        self.assertEqual(len(slopes), 2)
+        self.assertEqual(
+            set(slopes["latitude_group"]),
+            {"Northern Hemisphere", "Southern Hemisphere"}
+        )
+        self.assertTrue((slopes["n_valid_years"] >= 15).all())
+        self.assertTrue(
+            (slopes["beta_day_per_decade"].sub(2.0).abs() < 1e-10).all()
+        )
+        self.assertTrue(
+            (slopes["beta_night_per_decade"].add(1.0).abs() < 1e-10).all()
+        )
+        equator_january = coverage.loc[
+            coverage["latitude_group"].eq("Equatorial Belt")
+            & coverage["month"].eq(1)
+        ].iloc[0]
+        self.assertEqual(equator_january["n_cities_with_qc_data"], 1)
+        self.assertEqual(equator_january["n_cities_plotted"], 0)
+        self.assertEqual(equator_january["n_cities_below_minimum"], 1)
+
+    def test_city_slope_figures_create_separate_month_grids(self) -> None:
+        records = []
+        for city_id, latitude in ((1, 20.0), (2, -20.0), (3, 0.0)):
+            for year in range(2000, 2015):
+                record = {
+                    "ID_UC_G0": city_id,
+                    "year": year,
+                    "month": 1,
+                    "centroid_lat": latitude,
+                    "qc_pass_A_T": True,
+                    "qc_pass_A_A": True
+                }
+                for sensor, offset in (("terra", 0.0), ("aqua", 1.0)):
+                    record[f"suhi_{sensor}_day_mean"] = (
+                        offset + 0.2 * (year - 2000)
+                    )
+                    record[f"suhi_{sensor}_night_mean"] = (
+                        offset - 0.1 * (year - 2000)
+                    )
+                records.append(record)
+
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            outputs = create_city_slope_figures(
+                pd.DataFrame(records),
+                Path(temporary_dir),
+                2000,
+                2014,
+                10,
+                15,
+                30
+            )
+
             self.assertEqual(len(outputs), 6)
             self.assertTrue(all(path.is_file() for path in outputs))
             self.assertEqual(

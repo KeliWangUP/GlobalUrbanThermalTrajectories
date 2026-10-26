@@ -7,6 +7,7 @@ from src.eda_logging import configure_eda_logging
 from src.eda_visualizations.calendar_month import (
     create_calendar_month_figures
 )
+from src.eda_visualizations.city_slopes import create_city_slope_figures
 from src.eda_visualizations.local_season import (
     create_local_season_month_figures,
     create_local_season_year_figures
@@ -62,12 +63,15 @@ def run_eda_workflow(workflow_name: str) -> None:
             workflows = ("local_season",)
         elif workflow_name == "yearly_trends":
             workflows = ("yearly_trends",)
+        elif workflow_name == "city_slopes":
+            workflows = ("city_slopes",)
         elif workflow_name == "all":
             workflows = (
                 "calendar_months",
                 "yearly_panels",
                 "local_season",
-                "yearly_trends"
+                "yearly_trends",
+                "city_slopes"
             )
         else:
             raise ValueError(f"Unknown EDA workflow: {workflow_name}")
@@ -77,6 +81,7 @@ def run_eda_workflow(workflow_name: str) -> None:
             require_centroid=(
                 "local_season" in workflows
                 or "yearly_trends" in workflows
+                or "city_slopes" in workflows
             )
         )
         for workflow in workflows:
@@ -115,7 +120,7 @@ def run_eda_workflow(workflow_name: str) -> None:
                     config.eda.figure_dpi,
                     config.eda.equatorial_latitude_band_degrees
                 ))
-            else:
+            elif workflow == "yearly_trends":
                 outputs = create_yearly_trend_figures(
                     panel=panel,
                     output_dir=config.eda_figure_dir,
@@ -129,6 +134,18 @@ def run_eda_workflow(workflow_name: str) -> None:
                         config.eda.bootstrap_confidence_level
                     ),
                     random_seed=config.eda.bootstrap_random_seed,
+                    dpi=config.eda.figure_dpi
+                )
+            else:
+                outputs = create_city_slope_figures(
+                    panel=panel,
+                    output_dir=config.eda_figure_dir,
+                    start_year=config.eda.start_year,
+                    end_year=config.eda.end_year,
+                    equatorial_band_degrees=(
+                        config.eda.equatorial_latitude_band_degrees
+                    ),
+                    minimum_years=config.eda.min_city_slope_years,
                     dpi=config.eda.figure_dpi
                 )
             LOGGER.info(

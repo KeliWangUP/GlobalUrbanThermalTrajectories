@@ -19,6 +19,7 @@ class EdaConfig:
     end_year: int
     city_month_aggregation: str
     equatorial_latitude_band_degrees: float
+    min_city_slope_years: int
     bootstrap_replicates: int
     bootstrap_confidence_level: float
     bootstrap_random_seed: int
@@ -185,6 +186,12 @@ def load_analysis_config(config_path: Path | None = None) -> AnalysisConfig:
             city_month_aggregation=city_month_aggregation,
             equatorial_latitude_band_degrees=(
                 equatorial_latitude_band_degrees
+            ),
+            min_city_slope_years=_require_integer(
+                eda_data,
+                "min_city_slope_years",
+                2,
+                9999
             ),
             bootstrap_replicates=_require_integer(
                 eda_data,
