@@ -11,6 +11,7 @@ from src.build_suhi import (
     build_monthly_suhi,
     write_parquet_atomically
 )
+from src.city_metadata import build_city_metadata, merge_city_metadata
 from src.config import load_analysis_config
 
 
@@ -88,6 +89,29 @@ def main() -> None:
         monthly_panel,
         config.quality_control
     )
+
+    city_metadata, repaired_geometry_count = build_city_metadata(
+        config.city_bounds_shapefile
+    )
+    print(
+        f"[CITY META] {len(city_metadata):,} cities loaded from "
+        f"{config.city_bounds_shapefile}; "
+        f"{repaired_geometry_count:,} invalid geometries repaired.",
+        flush=True
+    )
+    write_parquet_atomically(
+        city_metadata,
+        config.city_metadata_file,
+        config.parquet_compression
+    )
+    print(
+        f"[OUTPUT] City metadata: {config.city_metadata_file}",
+        flush=True
+    )
+
+    monthly_panel = merge_city_metadata(monthly_panel, city_metadata)
+    seasonal_panel = merge_city_metadata(seasonal_panel, city_metadata)
+    annual_panel = merge_city_metadata(annual_panel, city_metadata)
 
     outputs = (
         (config.monthly_suhi_file, monthly_panel),

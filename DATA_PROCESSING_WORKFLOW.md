@@ -154,11 +154,13 @@ data/
 ├── raw/                          # 下载的原始 CSV，保留不改写
 │   ├── urban/
 │   ├── rural/                    # 旧优先城市数据，非当前全量输入
-│   └── rural_all_cities/         # 当前配置的乡村全量输入目录
+│   ├── rural_all_cities/         # 当前配置的乡村全量输入目录
+│   └── GHSL_bounds_shp/          # 城市边界 Shapefile（原始投影）
 ├── parquet/                      # 按年清洗后的 Parquet
 │   ├── urban/
 │   └── rural/
 └── processed/
+    ├── city_metadata.parquet     # ID_UC_G0 + centroid_lat lookup
     ├── suhi_monthly.parquet      # master analysis table
     ├── suhi_seasonal.parquet
     └── suhi_annual.parquet
@@ -197,6 +199,20 @@ python scripts/analysis/02_build_monthly_suhi.py
 城乡 Parquet，以 `ID_UC_G0 + year + month` 关联，并验证城乡测量字段结构一致。
 每个槽的 QC 分别对 urban 和 rural 两侧同时检查：
 
+此步骤还从 `paths.city_bounds_shapefile` 指向的本地 GHSL 2024 Shapefile
+生成两列城市元数据表：`ID_UC_G0` 和 `centroid_lat`。当前边界源文件采用
+World Mollweide（ESRI:54009）投影；程序先在原始投影下计算 polygon centroid，
+再将 centroid 点转换到 EPSG:4326 取纬度，避免直接在经纬度下求多边形质心。
+无效几何会使用 `make_valid` 修复后再计算，并报告修复数量。元数据单独保存为
+`data/processed/city_metadata.parquet`，再按 `ID_UC_G0` 合并到月度、季节和年度
+SUHI Parquet。关联按 many-to-one 校验；若分析记录中的城市 ID 无法匹配边界，
+流程会报错而不是留下空纬度。原始 Shapefile 与 CSV 都不修改。
+
+`centroid_lat > 0`、`centroid_lat < 0` 可用于后续分别标记北半球和南半球；
+恰为 0 的城市应作为赤道组单独处理或在敏感性分析中明确规则。质心纬度只是
+城市面状要素的代表位置，跨赤道城市后续可单独识别，不应将半球归属解释为
+城市范围完全位于该半球。
+
 | 分析配置项 | 当前阈值 | 含义 |
 |---|---:|---|
 | `min_valid_pixels_per_side_slot` | 5 | 城乡两侧各至少 5 个有效像元 |
@@ -231,8 +247,9 @@ python scripts/analysis/03_eda.py
 每个点代表一个城市在该日历月份跨 2000–2020 年的中位数。Terra 使用
 `qc_pass_A_T`，Aqua 使用 `qc_pass_A_A`，确保每个点的昼夜值来自同一组通过
 对应传感器昼夜 QC 的年份。两张图采用相同坐标范围，并绘制 `day = night`
-参考线。若某城市在该月份至少有一个通过 QC 的年份，即纳入该城市点；
-每点可用年份数也保存在聚合结果中。
+参考线；横纵轴均以 0 为中心，坐标轴在原点相交，从而显示正负 SUHI 象限。
+若某城市在该月份至少有一个通过 QC 的年份，即纳入该城市点；每点可用年份数
+也保存在聚合结果中。
 
 运行时会逐传感器、逐月打印合格城市—年—月份记录数、唯一合格城市数、
 通过率和作图城市数。图片保存到
@@ -242,17 +259,64 @@ python scripts/analysis/03_eda.py
 [`scripts/analysis/config.json`](./scripts/analysis/config.json) 中的 `eda`
 和 `paths.eda_figure_dir` 设置。
 
+如果 SUHI parquet 已经生成但没有 `centroid_lat`，可单独运行
+`python scripts/analysis/04_merge_city_metadata.py`：它会将城市 lookup 合并到
+月度、季节和年度文件，不必重跑年度 CSV 清洗与 SUHI 构建。该操作可重复执行，
+每次都以配置的 `city_metadata.parquet` 为权威来源替换原有质心列。
+
+`03_eda.py` 的运行信息会同时输出到终端和仓库根目录的 `logs/`，每次运行生成
+一个 `03_eda_YYYYMMDD_HHMMSS_microseconds.log` 文件，不覆盖旧日志。日志目录由
+`paths.eda_log_dir` 配置并在运行时自动创建。`01_convert_exports.py` 和
+`02_build_monthly_suhi.py` 当前仍只向终端输出日志。
+
+### 5.4 第二项 EDA：按年份比较每月 D/N 关系
+
+同样通过 `python scripts/analysis/03_eda.py` 生成。对每个传感器和日历月份，
+单独绘制一张年度分面图：2000–2020 年（含首尾，共 21 年）每年一个 panel，
+每个点是该年该月一个通过该传感器昼夜 QC 的城市 SUHI 观测，不做跨年均值或
+中位数聚合。共输出 24 张图（12 个月 × Terra/Aqua），分别放在
+`results/figures/eda/by_year/terra/` 和
+`results/figures/eda/by_year/aqua/`。
+
+所有年份、月份和传感器使用一致的对称坐标范围；坐标轴在 `(0, 0)` 相交，
+并保留 `day = night` 参考线，方便比较各年点云分布及日夜关系变化。每个 panel
+标注通过 QC 的城市数，运行日志逐年打印合格城市—月份数、总记录数、通过率
+及合格城市数。年份范围沿用分析配置中的 `eda.start_year` 和 `eda.end_year`。
+
+### 5.5 第三项 EDA：南北半球 local-season 对齐
+
+`03_eda.py` 还会额外输出一组 local-season 对齐图，不覆盖日历月版本。对
+`centroid_lat < 0` 的南半球城市，将月份向前平移 6 个月；北半球保持原月，
+`centroid_lat == 0` 的赤道城市不平移并单独标记。公式为：
+
+```text
+month_index = month - 1 + (6 if centroid_lat < 0 else 0)
+local_month = month_index mod 12 + 1
+local_year  = year + floor(month_index / 12)
+```
+
+因此南半球 2000 年 7 月会对齐为 2001 年 1 月；跨过 12 月时年份同步推进。
+按 source years 2000–2020 汇总的 12 个月图使用南北半球全部源年份，并按半球
+给城市点着色；按 aligned year 的年度分面图则仅使用完整重叠年度 2001–2020，
+避免首尾年份只有半个季节周期。各传感器仍分别使用 `qc_pass_A_T` 和
+`qc_pass_A_A`。图片位于 `results/figures/eda/local_season/`，年度分面位于其
+`by_year/terra/` 和 `by_year/aqua/` 子目录。
+
 ## 6. 当前实现与数据状态
 
 - 旧的 1,700 个优先城市分析曾生成 510,000 行月度、171,700 行季节和
   42,500 行年度记录；这是历史运行记录，不代表新全量乡村数据的最终行数。
 - 新全量 rural 导出使用独立目录和数据集名，最终城市数由非空 rural halo、
   fraction 资产及城乡可匹配记录共同决定；不要直接把优先点数量当成最终面板城市数。
-- 当前工作区可见 `data/raw/urban` 和旧 `data/raw/rural`；全量输入目录及
-  `data/parquet`、`data/processed` 目前尚未创建。把新年度 CSV 下载到配置目录后，
-  才能运行本地两步分析脚本生成这些输出。
-- [`scripts/analysis/03_eda.py`](./scripts/analysis/03_eda.py) 已实现首个 Terra/Aqua
-  昼夜 SUHI 月份面板图；其他系统化 EDA 和统计建模尚未实现。
+- 已从本地 GHSL Shapefile 生成
+  [`city_metadata.parquet`](./data/processed/city_metadata.parquet)：11,422 个唯一
+  `ID_UC_G0`，`centroid_lat` 范围为 -54.809232° 至 69.660579°；22 个无效几何
+  在质心计算前使用 `make_valid` 修复。运行 `02_build_monthly_suhi.py` 时会重新
+  生成这份 lookup，并合并到月度、季节和年度 SUHI 输出。
+- 当前环境尚未生成年度 clean Parquet 与 SUHI master/聚合表。将匹配年份的
+  全量 rural 年度 CSV 放入配置目录后，运行本地预处理即可生成。
+- [`scripts/analysis/03_eda.py`](./scripts/analysis/03_eda.py) 已实现 Terra/Aqua
+  昼夜 SUHI 跨年汇总图和按月按年分面图；其他系统化 EDA 和统计建模尚未实现。
 
 ## 7. 后续分析路线（待开展，不属于当前已完成处理）
 

@@ -10,14 +10,16 @@ data/
 ├── raw/
 │   ├── urban/
 │   ├── rural/
-│   └── rural_all_cities/
+│   ├── rural_all_cities/
+│   └── GHSL_bounds_shp/
 ├── parquet/
 │   ├── urban/
 │   └── rural/
 └── processed/
-    ├── suhi_monthly.parquet
-    ├── suhi_seasonal.parquet
-    └── suhi_annual.parquet
+│   ├── city_metadata.parquet
+│   ├── suhi_monthly.parquet
+│   ├── suhi_seasonal.parquet
+│   └── suhi_annual.parquet
 ```
 
 The existing `data/city` and `data/rural_1700` CSVs were copied byte-for-byte
@@ -53,6 +55,21 @@ preserves empty measurements as nulls, and writes one compressed Parquet file
 per source year. The second step joins rural rows to urban rows on
 `ID_UC_G0`, `year`, and `month`, then calculates each monthly SUHI as urban
 mean LST minus rural mean LST for Terra/Aqua day/night.
+It also reads the configured local city-boundary shapefile, calculates each
+polygon centroid in the source projected CRS, transforms that point to
+EPSG:4326, and writes an `ID_UC_G0`/`centroid_lat` lookup table to
+`data/processed/city_metadata.parquet`. The lookup is merged by `ID_UC_G0`
+into the monthly, seasonal, and annual analysis Parquets. Raw CSVs and the
+source shapefile are not modified. Invalid polygon geometries are repaired
+with `make_valid` for centroid calculation, and the repaired count is printed.
+If the three SUHI Parquets already exist without `centroid_lat`, run
+`04_merge_city_metadata.py` to enrich them in place without rebuilding from
+yearly source files. This merge is repeatable and replaces any old
+`centroid_lat` value with the configured metadata lookup.
+
+```bash
+python scripts/analysis/04_merge_city_metadata.py
+```
 
 `suhi_monthly.parquet` is the master analysis table. In addition to the four
 slot-level SUHI columns (`suhi_terra_day_mean`, `suhi_terra_night_mean`,
@@ -88,4 +105,29 @@ calendar month from 2000 through 2020. Terra uses `qc_pass_A_T`, Aqua uses
 `qc_pass_A_A`. The script prints monthly city and city-month coverage counts
 and saves PNGs under `results/figures/eda`. The year range, aggregation
 statistic, output directory, and figure resolution are configured in
-`config.json`.
+`config.json`. Both axes are centered on zero, with the x=y reference line
+retained to make the quadrants and day/night differences clear.
+
+The same command also creates a second view of yearly variation: for each
+calendar month it saves one figure per sensor, with one panel per year in the
+configured range (2000–2020 inclusive). Each point is that year's QC-passing
+city observation; there is no cross-year aggregation in these panels. Yearly
+figures are grouped under `results/figures/eda/by_year/terra` and
+`results/figures/eda/by_year/aqua`. Axes are shared across months, years, and
+sensors, centered at zero, and include the x=y reference line. The script
+prints the passing city counts and coverage for every sensor/month/year.
+All `03_eda.py` output is also written to a new timestamped log file in the
+repository-root `logs/` directory. The directory is created automatically;
+`01_convert_exports.py` and `02_build_monthly_suhi.py` still log to the
+terminal only.
+
+In addition to the original calendar-month plots, `03_eda.py` generates
+hemisphere-aligned local-season plots. It uses `centroid_lat < 0` for the
+Southern Hemisphere and shifts its months forward by six; northern and
+equatorial cities are not shifted. The annual key is advanced when the shift
+crosses December, so July–December in a southern source year map to January–
+June of the next aligned year. Aligned figures color points by hemisphere.
+The all-years monthly summaries use the configured source year range; yearly
+facets use only complete aligned years, which are 2001–2020 when the source
+range is 2000–2020. These figures are saved under
+`results/figures/eda/local_season/`.

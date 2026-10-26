@@ -30,7 +30,10 @@ class AnalysisConfig:
     monthly_suhi_file: Path
     seasonal_suhi_file: Path
     annual_suhi_file: Path
+    city_bounds_shapefile: Path
+    city_metadata_file: Path
     eda_figure_dir: Path
+    eda_log_dir: Path
     parquet_compression: str
     eda: EdaConfig
     quality_control: QualityControlConfig
@@ -143,8 +146,17 @@ def load_analysis_config(config_path: Path | None = None) -> AnalysisConfig:
         annual_suhi_file=_resolve_path(
             config_file, _require_string(paths, "annual_suhi_file")
         ),
+        city_bounds_shapefile=_resolve_path(
+            config_file, _require_string(paths, "city_bounds_shapefile")
+        ),
+        city_metadata_file=_resolve_path(
+            config_file, _require_string(paths, "city_metadata_file")
+        ),
         eda_figure_dir=_resolve_path(
             config_file, _require_string(paths, "eda_figure_dir")
+        ),
+        eda_log_dir=_resolve_path(
+            config_file, _require_string(paths, "eda_log_dir")
         ),
         parquet_compression=_require_string(parquet, "compression"),
         eda=EdaConfig(

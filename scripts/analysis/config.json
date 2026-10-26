@@ -7,7 +7,10 @@
     "monthly_suhi_file": "../../data/processed/suhi_monthly.parquet",
     "seasonal_suhi_file": "../../data/processed/suhi_seasonal.parquet",
     "annual_suhi_file": "../../data/processed/suhi_annual.parquet",
-    "eda_figure_dir": "../../results/figures/eda"
+    "city_bounds_shapefile": "../../data/raw/GHSL_bounds_shp/urban_bounds_2024.shp",
+    "city_metadata_file": "../../data/processed/city_metadata.parquet",
+    "eda_figure_dir": "../../results/figures/eda",
+    "eda_log_dir": "../../logs"
   },
   "parquet": {
     "compression": "zstd"
