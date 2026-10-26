@@ -359,8 +359,16 @@ class DiurnalEdaTests(unittest.TestCase):
                 dpi=30
             )
 
-            self.assertEqual(len(outputs), 6)
+            self.assertEqual(len(outputs), 24)
             self.assertTrue(all(path.is_file() for path in outputs))
+            climate_outputs = [
+                path for path in outputs if "by_climate" in path.parts
+            ]
+            self.assertEqual(len(climate_outputs), 18)
+            self.assertEqual(
+                {path.parent.parent.name for path in climate_outputs},
+                {"tropical", "arid", "temperate"}
+            )
             self.assertEqual(
                 {path.parent.name for path in outputs},
                 {
@@ -392,6 +400,7 @@ class DiurnalEdaTests(unittest.TestCase):
             sensor="terra",
             latitude_group="Northern Hemisphere",
             climate_groups=("Tropical", "Arid"),
+            climate_group=None,
             start_year=2000,
             end_year=2014,
             minimum_years=15,

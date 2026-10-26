@@ -381,6 +381,11 @@ SUHI 表中已有 `koppen_geiger_macro_group` 列；如缺失，先运行
 `04_merge_city_metadata.py` 刷新元数据。输出位于
 `results/figures/eda/city_slope_scatter/<sensor>/<latitude_group>/`。
 
+此外，每次运行也会输出气候区拆分版本：按传感器 × 大气候区 × 纬度组分别作图，
+共最多 36 张；每张仍包含 12 个日历月子图，气候区采用一致的单色，并保留共同的
+对称坐标范围。输出位于
+`results/figures/eda/city_slope_scatter/by_climate/<sensor>/<climate_group>/<latitude_group>/`。
+
 ### 5.8 第六项 EDA：Climate × local-season Month 趋势统计热图
 
 单独运行：

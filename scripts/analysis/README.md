@@ -205,7 +205,15 @@ shown in gray. The panels share symmetric axes across all six figures, include
 zero crosshairs and a βD=βN reference. City counts and exclusions for
 insufficient valid years are logged. The input SUHI table must include
 `koppen_geiger_macro_group`; run `04_merge_city_metadata.py` to add or refresh
-the metadata. Run this module independently with:
+the metadata.
+
+For less crowded comparisons, the same run also writes a climate-separated
+version: each figure contains one climate group and one latitude group, with
+the same 12 monthly panels and shared axis limits. These additional figures
+are saved under
+`results/figures/eda/city_slope_scatter/by_climate/<sensor>/<climate_group>/<latitude_group>/`.
+The climate group has one consistent color in this version.
+Run this module independently with:
 
 ```bash
 python scripts/analysis/eda_city_slopes.py
