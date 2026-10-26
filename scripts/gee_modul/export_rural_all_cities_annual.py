@@ -1,3 +1,5 @@
+from typing import Any
+
 import ee
 
 from src.batch_utils import filter_nonempty_geometries
@@ -17,10 +19,11 @@ from src.rural_reference_utils import (
 )
 
 
-def main() -> None:
-    config = load_config()
-    initialize_gee(config)
-
+def export_rural_all_cities(
+    config: dict[str, Any],
+    projection: ee.Projection,
+    scale: float
+) -> None:
     rural_config = config["rural"]
     static_config = rural_config["static_assets"]
     export_config = config["export"]
@@ -38,7 +41,6 @@ def main() -> None:
             "build_rural_city_fraction_assets.py first."
         )
 
-    projection, scale = get_modis_reference_grid(config)
     halos = filter_nonempty_geometries(
         ee.FeatureCollection(halo_asset),
         rural_config["max_error_m"]
@@ -88,6 +90,13 @@ def main() -> None:
         scale=scale,
         spatial_mask=rural_mask
     )
+
+
+def main() -> None:
+    config = load_config()
+    initialize_gee(config)
+    projection, scale = get_modis_reference_grid(config)
+    export_rural_all_cities(config, projection, scale)
 
 
 if __name__ == "__main__":

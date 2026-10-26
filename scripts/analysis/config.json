@@ -6,10 +6,17 @@
     "rural_parquet_dir": "../../data/parquet/rural",
     "monthly_suhi_file": "../../data/processed/suhi_monthly.parquet",
     "seasonal_suhi_file": "../../data/processed/suhi_seasonal.parquet",
-    "annual_suhi_file": "../../data/processed/suhi_annual.parquet"
+    "annual_suhi_file": "../../data/processed/suhi_annual.parquet",
+    "eda_figure_dir": "../../results/figures/eda"
   },
   "parquet": {
     "compression": "zstd"
+  },
+  "eda": {
+    "start_year": 2000,
+    "end_year": 2020,
+    "city_month_aggregation": "median",
+    "figure_dpi": 300
   },
   "quality_control": {
     "min_valid_pixels_per_side_slot": 5,

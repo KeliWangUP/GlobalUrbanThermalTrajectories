@@ -4,12 +4,12 @@ from src.export_utils import (
     load_config
 )
 from export_city_monthly_lst import export_city
-from export_rural_monthly_lst import export_rural
+from export_rural_all_cities_annual import export_rural_all_cities
 
 
 EXPORTERS = {
     "city": export_city,
-    "rural": export_rural
+    "rural": export_rural_all_cities
 }
 
 

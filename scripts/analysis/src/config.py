@@ -14,6 +14,14 @@ class QualityControlConfig:
 
 
 @dataclass(frozen=True)
+class EdaConfig:
+    start_year: int
+    end_year: int
+    city_month_aggregation: str
+    figure_dpi: int
+
+
+@dataclass(frozen=True)
 class AnalysisConfig:
     urban_raw_dir: Path
     rural_raw_dir: Path
@@ -22,7 +30,9 @@ class AnalysisConfig:
     monthly_suhi_file: Path
     seasonal_suhi_file: Path
     annual_suhi_file: Path
+    eda_figure_dir: Path
     parquet_compression: str
+    eda: EdaConfig
     quality_control: QualityControlConfig
 
 
@@ -93,10 +103,23 @@ def load_analysis_config(config_path: Path | None = None) -> AnalysisConfig:
     root = _require_object(config_data, "root")
     paths = _require_object(root.get("paths"), "paths")
     parquet = _require_object(root.get("parquet"), "parquet")
+    eda_data = _require_object(root.get("eda"), "eda")
     quality_control_data = _require_object(
         root.get("quality_control"),
         "quality_control"
     )
+    eda_start_year = _require_integer(eda_data, "start_year", 1, 9999)
+    eda_end_year = _require_integer(eda_data, "end_year", 1, 9999)
+    if eda_start_year > eda_end_year:
+        raise ValueError("EDA start_year must not exceed end_year.")
+    city_month_aggregation = _require_string(
+        eda_data,
+        "city_month_aggregation"
+    )
+    if city_month_aggregation not in {"mean", "median"}:
+        raise ValueError(
+            "EDA city_month_aggregation must be 'mean' or 'median'."
+        )
 
     return AnalysisConfig(
         urban_raw_dir=_resolve_path(
@@ -120,7 +143,16 @@ def load_analysis_config(config_path: Path | None = None) -> AnalysisConfig:
         annual_suhi_file=_resolve_path(
             config_file, _require_string(paths, "annual_suhi_file")
         ),
+        eda_figure_dir=_resolve_path(
+            config_file, _require_string(paths, "eda_figure_dir")
+        ),
         parquet_compression=_require_string(parquet, "compression"),
+        eda=EdaConfig(
+            start_year=eda_start_year,
+            end_year=eda_end_year,
+            city_month_aggregation=city_month_aggregation,
+            figure_dpi=_require_integer(eda_data, "figure_dpi", 72, 1200)
+        ),
         quality_control=QualityControlConfig(
             min_valid_pixels_per_side_slot=_require_integer(
                 quality_control_data,

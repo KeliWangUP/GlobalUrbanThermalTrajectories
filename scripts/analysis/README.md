@@ -1,5 +1,8 @@
 # Analysis data preparation
 
+For the complete source-to-analysis workflow and future analysis roadmap, see
+[`../../DATA_PROCESSING_WORKFLOW.md`](../../DATA_PROCESSING_WORKFLOW.md).
+
 The preprocessing pipeline keeps the downloaded CSVs unchanged and creates:
 
 ```text
@@ -42,6 +45,7 @@ Run the steps from the repository root:
 ```bash
 python scripts/analysis/01_convert_exports.py
 python scripts/analysis/02_build_monthly_suhi.py
+python scripts/analysis/03_eda.py
 ```
 
 The first step validates one row per city/year/month, converts numeric columns,
@@ -76,3 +80,12 @@ Seasonal and annual values are null when their per-metric minimum number of
 QC-passing months is not reached.
 LST mean columns are already in degrees Celsius in the GEE exports, so no
 additional unit conversion is applied here.
+
+The first EDA in `03_eda.py` plots daytime SUHI against nighttime SUHI for
+Terra and Aqua in separate 12-month panel figures. Each point is one city;
+the x/y values are medians across QC-passing observations for that city and
+calendar month from 2000 through 2020. Terra uses `qc_pass_A_T`, Aqua uses
+`qc_pass_A_A`. The script prints monthly city and city-month coverage counts
+and saves PNGs under `results/figures/eda`. The year range, aggregation
+statistic, output directory, and figure resolution are configured in
+`config.json`.

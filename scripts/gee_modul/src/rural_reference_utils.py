@@ -4,7 +4,6 @@ from typing import Any
 import ee
 
 from src.batch_utils import (
-    TILE_ID_PROPERTY,
     get_occupied_subtile_ids
 )
 
@@ -223,7 +222,7 @@ def build_rural_halo(
 
     return (
         ee.Feature(rural_halo)
-        .copyProperties(feature, [city_id_field, TILE_ID_PROPERTY])
+        .copyProperties(feature, [city_id_field])
     )
 
 

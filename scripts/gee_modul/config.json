@@ -103,14 +103,11 @@
     "static_assets": {
       "halo_asset": "projects/ee-keliwangpy/assets/GlobalUrbanThermalTrajectories/rural_halos_fixed2024_v0_3",
       "halo_asset_description": "rural_halos_fixed2024_v0_3",
-      "fraction_collection_asset": "projects/ee-keliwangpy/assets/GlobalUrbanThermalTrajectories/rural_fraction_fixed2024_v0_3_subtile128",
       "city_fraction_collection_asset": "projects/ee-keliwangpy/assets/GlobalUrbanThermalTrajectories/rural_fraction_by_city_direct_v0_4",
-      "subtile_pixels": 128,
       "processing_buffer_modis_pixels": 2,
       "max_source_pixels_per_modis_pixel": 32768,
       "fraction_value_scale": 10000,
-      "export_max_pixels": 100000000,
-      "max_asset_tasks_per_run": 10
+      "export_max_pixels": 100000000
     }
   },
 
@@ -124,16 +121,9 @@
       "rural"
     ],
     "city_dataset_name": "city_lst_fixed2024",
-    "rural_dataset_name": "rural_lst",
-    "rural_batch_indices": null,
-    "rural_city_dataset_name": "rural_lst_by_city",
     "rural_priority_dataset_name": "rural_lst_over_300k",
     "rural_all_cities_dataset_name": "rural_lst_all_cities",
     "rural_city_ids": null,
-    "rural_city_start_index": 0,
-    "rural_city_max_tasks_per_run": 5,
-    "rural_city_start_year": 2000,
-    "rural_city_end_year": 2024,
     "rural_city_fraction_priority_only": false,
     "rural_city_fraction_chunked_ids": [
       5929,

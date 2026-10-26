@@ -1,12 +1,10 @@
 import ee
 
 from src.batch_utils import (
-    assign_cities_to_modis_tiles,
     filter_nonempty_geometries
 )
 from src.export_utils import (
     asset_exists,
-    get_modis_reference_grid,
     initialize_gee,
     load_config
 )
@@ -23,13 +21,9 @@ def main() -> None:
         print(f"[SKIP] Rural halo asset exists: {halo_asset}")
         return
 
-    projection, _ = get_modis_reference_grid(config)
-    cities = assign_cities_to_modis_tiles(config, projection)
-    source_cities = ee.FeatureCollection(config["cities"]["asset"])
-    city_count = source_cities.size().getInfo()
-    assigned_count = cities.size().getInfo()
+    cities = ee.FeatureCollection(config["cities"]["asset"])
     city_ids = (
-        source_cities
+        cities
         .aggregate_array(config["cities"]["id_field"])
         .getInfo()
     )
@@ -41,12 +35,6 @@ def main() -> None:
         raise ValueError(
             f"{config['cities']['id_field']} values are not unique."
         )
-    if assigned_count != city_count:
-        raise ValueError(
-            f"Only {assigned_count} of {city_count} cities intersected "
-            "the MODIS tile grid."
-        )
-
     rural_config = config["rural"]
     halos = build_all_rural_halos(
         cities=cities,
@@ -69,7 +57,7 @@ def main() -> None:
     print(f"[TASK] {task.id}")
     print(
         "[NEXT] After the halo asset task completes, run "
-        "build_rural_fraction_assets.py."
+        "build_rural_city_fraction_assets.py."
     )
 
 

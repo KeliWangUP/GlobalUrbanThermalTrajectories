@@ -1,9 +1,7 @@
 import ee
 
 from src.batch_utils import (
-    filter_nonempty_geometries,
-    get_tile_city_counts,
-    TILE_ID_PROPERTY
+    filter_nonempty_geometries
 )
 from src.export_utils import (
     LST_OUTPUT_FIELDS,
@@ -53,13 +51,6 @@ def main() -> None:
         id_field,
         city_id
     )
-    city_tile_id = ee.Feature(
-        rural_halos.first()
-    ).get(TILE_ID_PROPERTY).getInfo()
-    tile_ids = list(get_tile_city_counts(all_halos))
-    if city_tile_id not in tile_ids:
-        raise ValueError(f"City {city_id} is not assigned to a MODIS tile.")
-    batch_index = tile_ids.index(city_tile_id)
     fraction_collection = config["rural"]["static_assets"][
         "city_fraction_collection_asset"
     ]
@@ -83,8 +74,7 @@ def main() -> None:
         )
 
     print(
-        f"[CHECK] City ID: {city_id} in batch {batch_index:03d} "
-        f"(MODIS tile {city_tile_id})"
+        f"[CHECK] City ID: {city_id}"
     )
 
     projection_info = projection.getInfo()
