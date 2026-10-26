@@ -18,6 +18,7 @@ class EdaConfig:
     start_year: int
     end_year: int
     city_month_aggregation: str
+    equatorial_latitude_band_degrees: float
     figure_dpi: int
 
 
@@ -123,6 +124,14 @@ def load_analysis_config(config_path: Path | None = None) -> AnalysisConfig:
         raise ValueError(
             "EDA city_month_aggregation must be 'mean' or 'median'."
         )
+    equatorial_latitude_band_degrees = _require_nonnegative_number(
+        eda_data,
+        "equatorial_latitude_band_degrees"
+    )
+    if equatorial_latitude_band_degrees > 90:
+        raise ValueError(
+            "EDA equatorial_latitude_band_degrees must not exceed 90."
+        )
 
     return AnalysisConfig(
         urban_raw_dir=_resolve_path(
@@ -163,6 +172,9 @@ def load_analysis_config(config_path: Path | None = None) -> AnalysisConfig:
             start_year=eda_start_year,
             end_year=eda_end_year,
             city_month_aggregation=city_month_aggregation,
+            equatorial_latitude_band_degrees=(
+                equatorial_latitude_band_degrees
+            ),
             figure_dpi=_require_integer(eda_data, "figure_dpi", 72, 1200)
         ),
         quality_control=QualityControlConfig(

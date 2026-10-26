@@ -208,10 +208,10 @@ World Mollweide（ESRI:54009）投影；程序先在原始投影下计算 polygo
 SUHI Parquet。关联按 many-to-one 校验；若分析记录中的城市 ID 无法匹配边界，
 流程会报错而不是留下空纬度。原始 Shapefile 与 CSV 都不修改。
 
-`centroid_lat > 0`、`centroid_lat < 0` 可用于后续分别标记北半球和南半球；
-恰为 0 的城市应作为赤道组单独处理或在敏感性分析中明确规则。质心纬度只是
-城市面状要素的代表位置，跨赤道城市后续可单独识别，不应将半球归属解释为
-城市范围完全位于该半球。
+`centroid_lat` 可用于后续纬度分组；本项目当前 EDA 将 `-10°` 至 `10°`
+（含边界）设为赤道纬度带，具体阈值见 `eda.equatorial_latitude_band_degrees`。
+质心纬度只是城市面状要素的代表位置，跨赤道城市后续可单独识别，不应将纬度
+分组解释为城市范围完全位于该区域。
 
 | 分析配置项 | 当前阈值 | 含义 |
 |---|---:|---|
@@ -283,24 +283,33 @@ python scripts/analysis/03_eda.py
 标注通过 QC 的城市数，运行日志逐年打印合格城市—月份数、总记录数、通过率
 及合格城市数。年份范围沿用分析配置中的 `eda.start_year` 和 `eda.end_year`。
 
-### 5.5 第三项 EDA：南北半球 local-season 对齐
+### 5.5 第三项 EDA：local-season 分纬度组对齐
 
-`03_eda.py` 还会额外输出一组 local-season 对齐图，不覆盖日历月版本。对
-`centroid_lat < 0` 的南半球城市，将月份向前平移 6 个月；北半球保持原月，
-`centroid_lat == 0` 的赤道城市不平移并单独标记。公式为：
+该 EDA 既可由 `03_eda.py` 一并运行，也可独立运行：
+
+```bash
+python scripts/analysis/eda_local_season.py
+```
+
+纬度组依据城市 `centroid_lat` 划分：北半球 `> 10°`、南半球 `< -10°`、
+赤道纬度带 `-10°` 至 `10°`（含边界）。带宽由
+`scripts/analysis/config.json` 的 `eda.equatorial_latitude_band_degrees`
+配置。北半球和赤道纬度带城市不平移；南半球月份向后平移 6 个月。公式为：
 
 ```text
-month_index = month - 1 + (6 if centroid_lat < 0 else 0)
+month_index = month - 1 + (6 if centroid_lat < -equatorial_band else 0)
 local_month = month_index mod 12 + 1
 local_year  = year + floor(month_index / 12)
 ```
 
 因此南半球 2000 年 7 月会对齐为 2001 年 1 月；跨过 12 月时年份同步推进。
-按 source years 2000–2020 汇总的 12 个月图使用南北半球全部源年份，并按半球
-给城市点着色；按 aligned year 的年度分面图则仅使用完整重叠年度 2001–2020，
-避免首尾年份只有半个季节周期。各传感器仍分别使用 `qc_pass_A_T` 和
-`qc_pass_A_A`。图片位于 `results/figures/eda/local_season/`，年度分面位于其
-`by_year/terra/` 和 `by_year/aqua/` 子目录。
+月度汇总图分别输出 Terra/Aqua × 三个纬度组共 6 张图，按配置的源年份范围
+进行城市内 mean/median 汇总。年度分面图输出 Terra/Aqua × 三个纬度组 × 12
+个月共 72 张图；它只使用完整的对齐年度，源范围为 2000–2020 时即 2001–2020，
+避免首尾年份只有半个季节周期。每个传感器仍分别使用 `qc_pass_A_T` 和
+`qc_pass_A_A`。各组和传感器共享坐标范围，分组图不会在同一图中混合。月度图
+位于 `results/figures/eda/local_season/<latitude_group>/`，年度分面位于
+`results/figures/eda/local_season/by_year/<latitude_group>/`。
 
 ## 6. 当前实现与数据状态
 
@@ -316,7 +325,9 @@ local_year  = year + floor(month_index / 12)
 - 当前环境尚未生成年度 clean Parquet 与 SUHI master/聚合表。将匹配年份的
   全量 rural 年度 CSV 放入配置目录后，运行本地预处理即可生成。
 - [`scripts/analysis/03_eda.py`](./scripts/analysis/03_eda.py) 已实现 Terra/Aqua
-  昼夜 SUHI 跨年汇总图和按月按年分面图；其他系统化 EDA 和统计建模尚未实现。
+  昼夜 SUHI 日历月汇总、逐年分面和 local-season 分纬度组图；三类 EDA 也可
+  分别由 `eda_calendar_months.py`、`eda_yearly_panels.py` 和
+  `eda_local_season.py` 独立运行。其他系统化 EDA 和统计建模尚未实现。
 
 ## 7. 后续分析路线（待开展，不属于当前已完成处理）
 

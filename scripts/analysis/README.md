@@ -121,13 +121,30 @@ repository-root `logs/` directory. The directory is created automatically;
 `01_convert_exports.py` and `02_build_monthly_suhi.py` still log to the
 terminal only.
 
-In addition to the original calendar-month plots, `03_eda.py` generates
-hemisphere-aligned local-season plots. It uses `centroid_lat < 0` for the
-Southern Hemisphere and shifts its months forward by six; northern and
-equatorial cities are not shifted. The annual key is advanced when the shift
-crosses December, so July–December in a southern source year map to January–
-June of the next aligned year. Aligned figures color points by hemisphere.
-The all-years monthly summaries use the configured source year range; yearly
-facets use only complete aligned years, which are 2001–2020 when the source
-range is 2000–2020. These figures are saved under
-`results/figures/eda/local_season/`.
+`03_eda.py` runs all three EDA modules. Each can also be run independently:
+
+```bash
+python scripts/analysis/eda_calendar_months.py
+python scripts/analysis/eda_yearly_panels.py
+python scripts/analysis/eda_local_season.py
+```
+
+The local-season module uses `centroid_lat` to group cities into Northern
+Hemisphere (`> 10°`), Southern Hemisphere (`< -10°`), and Equatorial Belt
+(`-10°` through `10°`, inclusive). The band width is set by
+`eda.equatorial_latitude_band_degrees` in `config.json`. Equatorial and
+northern cities retain their calendar months; southern cities shift by six
+months. The aligned year advances when this shift crosses December, so July–
+December in a southern source year map to January–June of the next aligned
+year.
+
+Local-season plots are separated by latitude group instead of mixing groups
+with colors: 6 monthly summary figures (two sensors × three groups) are saved
+under `results/figures/eda/local_season/<latitude_group>/`. These summarize
+each city's configured mean or median across the source-year range. Another 72
+year-panel figures (two sensors × three groups × 12 months) use only complete
+aligned years; for a 2000–2020 source range, those are 2001–2020. They are
+saved under `results/figures/eda/local_season/by_year/<latitude_group>/`.
+Groups and sensors use common axis limits, with axes centered at zero and the
+`day = night` reference line retained. Per-group city counts are logged for
+the month summaries, and per-year QC counts are logged for year panels.

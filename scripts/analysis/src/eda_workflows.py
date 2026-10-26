@@ -1,0 +1,117 @@
+import logging
+
+import pandas as pd
+
+from src.config import AnalysisConfig, load_analysis_config
+from src.eda_logging import configure_eda_logging
+from src.eda_visualizations.calendar_month import (
+    create_calendar_month_figures
+)
+from src.eda_visualizations.local_season import (
+    create_local_season_month_figures,
+    create_local_season_year_figures
+)
+from src.eda_visualizations.year_panels import (
+    create_calendar_year_figures
+)
+
+
+LOGGER = logging.getLogger("diurnal_eda")
+
+
+def _load_panel(
+    config: AnalysisConfig,
+    require_centroid: bool
+) -> pd.DataFrame:
+    if not config.monthly_suhi_file.is_file():
+        raise FileNotFoundError(
+            "Monthly SUHI master table not found: "
+            f"{config.monthly_suhi_file}. Run 02_build_monthly_suhi.py first."
+        )
+    LOGGER.info("Input: %s", config.monthly_suhi_file)
+    panel = pd.read_parquet(config.monthly_suhi_file)
+    if require_centroid and "centroid_lat" not in panel.columns:
+        raise ValueError(
+            "Monthly SUHI panel is missing centroid_lat. Run "
+            "04_merge_city_metadata.py or rebuild it with "
+            "02_build_monthly_suhi.py."
+        )
+    return panel
+
+
+def run_eda_workflow(workflow_name: str) -> None:
+    config = load_analysis_config()
+    logger, _ = configure_eda_logging(config.eda_log_dir)
+    logger.info(
+        "Starting EDA workflow '%s' for %s-%s (%s aggregation).",
+        workflow_name,
+        config.eda.start_year,
+        config.eda.end_year,
+        config.eda.city_month_aggregation
+    )
+
+    try:
+        if workflow_name == "calendar_months":
+            workflows = ("calendar_months",)
+        elif workflow_name == "yearly_panels":
+            workflows = ("yearly_panels",)
+        elif workflow_name == "local_season":
+            workflows = ("local_season",)
+        elif workflow_name == "all":
+            workflows = (
+                "calendar_months",
+                "yearly_panels",
+                "local_season"
+            )
+        else:
+            raise ValueError(f"Unknown EDA workflow: {workflow_name}")
+
+        panel = _load_panel(
+            config,
+            require_centroid="local_season" in workflows
+        )
+        for workflow in workflows:
+            if workflow == "calendar_months":
+                outputs = create_calendar_month_figures(
+                    panel,
+                    config.eda_figure_dir,
+                    config.eda.start_year,
+                    config.eda.end_year,
+                    config.eda.city_month_aggregation,
+                    config.eda.figure_dpi
+                )
+            elif workflow == "yearly_panels":
+                outputs = create_calendar_year_figures(
+                    panel,
+                    config.eda_figure_dir,
+                    config.eda.start_year,
+                    config.eda.end_year,
+                    config.eda.figure_dpi
+                )
+            else:
+                outputs = create_local_season_month_figures(
+                    panel,
+                    config.eda_figure_dir,
+                    config.eda.start_year,
+                    config.eda.end_year,
+                    config.eda.city_month_aggregation,
+                    config.eda.figure_dpi,
+                    config.eda.equatorial_latitude_band_degrees
+                )
+                outputs.extend(create_local_season_year_figures(
+                    panel,
+                    config.eda_figure_dir,
+                    config.eda.start_year,
+                    config.eda.end_year,
+                    config.eda.figure_dpi,
+                    config.eda.equatorial_latitude_band_degrees
+                ))
+            LOGGER.info(
+                "Workflow '%s' created %s figures.",
+                workflow,
+                len(outputs)
+            )
+        LOGGER.info("EDA workflow '%s' completed.", workflow_name)
+    except Exception:
+        LOGGER.exception("EDA workflow '%s' failed.", workflow_name)
+        raise
