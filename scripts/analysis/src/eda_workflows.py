@@ -14,6 +14,9 @@ from src.eda_visualizations.local_season import (
 from src.eda_visualizations.year_panels import (
     create_calendar_year_figures
 )
+from src.eda_visualizations.yearly_trends import (
+    create_yearly_trend_figures
+)
 
 
 LOGGER = logging.getLogger("diurnal_eda")
@@ -57,18 +60,24 @@ def run_eda_workflow(workflow_name: str) -> None:
             workflows = ("yearly_panels",)
         elif workflow_name == "local_season":
             workflows = ("local_season",)
+        elif workflow_name == "yearly_trends":
+            workflows = ("yearly_trends",)
         elif workflow_name == "all":
             workflows = (
                 "calendar_months",
                 "yearly_panels",
-                "local_season"
+                "local_season",
+                "yearly_trends"
             )
         else:
             raise ValueError(f"Unknown EDA workflow: {workflow_name}")
 
         panel = _load_panel(
             config,
-            require_centroid="local_season" in workflows
+            require_centroid=(
+                "local_season" in workflows
+                or "yearly_trends" in workflows
+            )
         )
         for workflow in workflows:
             if workflow == "calendar_months":
@@ -88,7 +97,7 @@ def run_eda_workflow(workflow_name: str) -> None:
                     config.eda.end_year,
                     config.eda.figure_dpi
                 )
-            else:
+            elif workflow == "local_season":
                 outputs = create_local_season_month_figures(
                     panel,
                     config.eda_figure_dir,
@@ -106,6 +115,22 @@ def run_eda_workflow(workflow_name: str) -> None:
                     config.eda.figure_dpi,
                     config.eda.equatorial_latitude_band_degrees
                 ))
+            else:
+                outputs = create_yearly_trend_figures(
+                    panel=panel,
+                    output_dir=config.eda_figure_dir,
+                    start_year=config.eda.start_year,
+                    end_year=config.eda.end_year,
+                    equatorial_band_degrees=(
+                        config.eda.equatorial_latitude_band_degrees
+                    ),
+                    bootstrap_replicates=config.eda.bootstrap_replicates,
+                    confidence_level=(
+                        config.eda.bootstrap_confidence_level
+                    ),
+                    random_seed=config.eda.bootstrap_random_seed,
+                    dpi=config.eda.figure_dpi
+                )
             LOGGER.info(
                 "Workflow '%s' created %s figures.",
                 workflow,

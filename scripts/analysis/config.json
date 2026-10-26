@@ -20,6 +20,9 @@
     "end_year": 2020,
     "city_month_aggregation": "median",
     "equatorial_latitude_band_degrees": 10,
+    "bootstrap_replicates": 1000,
+    "bootstrap_confidence_level": 0.95,
+    "bootstrap_random_seed": 42,
     "figure_dpi": 300
   },
   "quality_control": {

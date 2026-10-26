@@ -13,6 +13,7 @@ from src.diurnal_eda import (
     prepare_sensor_year_month_rows
 )
 from src.eda_logging import configure_eda_logging
+from src.eda_trends import annual_sensor_trend_summary
 from src.eda_visualizations.calendar_month import (
     create_calendar_month_figures
 )
@@ -26,6 +27,9 @@ from src.eda_visualizations.local_season import (
 )
 from src.eda_visualizations.year_panels import (
     create_calendar_year_figures
+)
+from src.eda_visualizations.yearly_trends import (
+    create_yearly_trend_figures
 )
 
 
@@ -158,6 +162,79 @@ class DiurnalEdaTests(unittest.TestCase):
             ]
         )
         self.assertEqual(aligned["local_month"].tolist(), [1, 1, 1, 7, 1])
+
+    def test_annual_summary_uses_stored_city_asymmetry(self) -> None:
+        panel = pd.DataFrame({
+            "ID_UC_G0": [1, 2, 3],
+            "year": [2000] * 3,
+            "month": [1] * 3,
+            "centroid_lat": [20.0] * 3,
+            "suhi_terra_day_mean": [1.0, 2.0, 100.0],
+            "suhi_terra_night_mean": [0.0, 100.0, 101.0],
+            "A_T": [1.0, -98.0, -1.0],
+            "qc_pass_A_T": [True] * 3
+        })
+
+        summary = annual_sensor_trend_summary(
+            panel,
+            "terra",
+            2000,
+            2000,
+            10,
+            100,
+            0.95,
+            42
+        )
+        row = summary.loc[
+            summary["latitude_group"].eq("Northern Hemisphere")
+            & summary["month"].eq(1)
+        ].iloc[0]
+
+        self.assertEqual(row["n_cities"], 3)
+        self.assertEqual(row["median_day"], 2.0)
+        self.assertEqual(row["median_night"], 100.0)
+        self.assertEqual(row["median_asymmetry"], -1.0)
+        self.assertLessEqual(row["ci_lower_asymmetry"], -1.0)
+        self.assertGreaterEqual(row["ci_upper_asymmetry"], -1.0)
+
+    def test_yearly_trend_figures_create_sensor_and_latitude_groups(self) -> None:
+        panel = pd.DataFrame({
+            "ID_UC_G0": [1, 2, 3],
+            "year": [2000] * 3,
+            "month": [1] * 3,
+            "centroid_lat": [20.0, -20.0, 0.0],
+            "suhi_terra_day_mean": [2.0, 3.0, 4.0],
+            "suhi_terra_night_mean": [1.0, 2.0, 2.0],
+            "A_T": [1.0, 1.0, 2.0],
+            "qc_pass_A_T": [True] * 3,
+            "suhi_aqua_day_mean": [3.0, 4.0, 5.0],
+            "suhi_aqua_night_mean": [1.0, 2.0, 3.0],
+            "A_A": [2.0, 2.0, 2.0],
+            "qc_pass_A_A": [True] * 3
+        })
+
+        with tempfile.TemporaryDirectory() as temporary_dir:
+            outputs = create_yearly_trend_figures(
+                panel,
+                Path(temporary_dir),
+                2000,
+                2000,
+                10,
+                100,
+                0.95,
+                42,
+                30
+            )
+            self.assertEqual(len(outputs), 6)
+            self.assertTrue(all(path.is_file() for path in outputs))
+            self.assertEqual(
+                {path.parent.name for path in outputs},
+                {
+                    "northern_hemisphere",
+                    "southern_hemisphere",
+                    "equatorial_belt"
+                }
+            )
 
     def test_axis_limits_are_symmetric_around_zero(self) -> None:
         frame = pd.DataFrame({

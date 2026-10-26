@@ -121,12 +121,13 @@ repository-root `logs/` directory. The directory is created automatically;
 `01_convert_exports.py` and `02_build_monthly_suhi.py` still log to the
 terminal only.
 
-`03_eda.py` runs all three EDA modules. Each can also be run independently:
+`03_eda.py` runs all four EDA modules. Each can also be run independently:
 
 ```bash
 python scripts/analysis/eda_calendar_months.py
 python scripts/analysis/eda_yearly_panels.py
 python scripts/analysis/eda_local_season.py
+python scripts/analysis/eda_yearly_trends.py
 ```
 
 The local-season module uses `centroid_lat` to group cities into Northern
@@ -148,3 +149,21 @@ saved under `results/figures/eda/local_season/by_year/<latitude_group>/`.
 Groups and sensors use common axis limits, with axes centered at zero and the
 `day = night` reference line retained. Per-group city counts are logged for
 the month summaries, and per-year QC counts are logged for year panels.
+
+The yearly trend EDA focuses on compact annual summaries rather than city
+scatter clouds. It uses the already stored city-month `A_T` and `A_A` values
+alongside daytime and nighttime SUHI, and filters each sensor with its paired
+day/night QC flag. For each calendar month, year, sensor, and latitude group,
+it plots the cross-city median D, median N, and median A. A percentile
+bootstrap resamples cities within each year/month/group, keeping each city's
+D/N/A values together; the shaded bands show the configured confidence
+interval. These are annual cross-sectional intervals, not confidence
+intervals for a fitted temporal slope. City sample-count ranges are shown in
+each month panel and logged.
+
+Each trend figure is a 3×4 month grid with year on the x-axis. Six figures
+(two sensors × three latitude groups) are written under
+`results/figures/eda/yearly_trends/<sensor>/<latitude_group>/`. Axes share one
+symmetric range across the six figures. Bootstrap repetitions, confidence
+level, and random seed are configured by `bootstrap_replicates`,
+`bootstrap_confidence_level`, and `bootstrap_random_seed` in `config.json`.

@@ -311,6 +311,31 @@ local_year  = year + floor(month_index / 12)
 位于 `results/figures/eda/local_season/<latitude_group>/`，年度分面位于
 `results/figures/eda/local_season/by_year/<latitude_group>/`。
 
+### 5.6 第四项 EDA：年度 D/N/A 中位数与 bootstrap CI
+
+单独运行：
+
+```bash
+python scripts/analysis/eda_yearly_trends.py
+```
+
+也可通过 `03_eda.py` 与其他 EDA 一并运行。每张图以年份为横轴；一张图对应
+一个传感器和一个纬度组，内部按 12 个日历月分面。每个年度/月/组内，先按对应
+传感器的昼夜配对 QC 筛选城市，再跨城市计算中位数 D（day）、中位数 N（night）
+和中位数 A。A 直接使用月度主表中已有的 `A_T` / `A_A`，不会从年度中位数 D/N
+再次推算。Terra 与 Aqua 分别使用 `qc_pass_A_T`、`qc_pass_A_A`。
+
+每年分别在该年的城市样本内有放回抽样，计算 D、N、A 中位数的百分位 bootstrap
+置信区间；每次抽样以城市为单位，同时抽取该城市 D/N/A，保持日夜及其差值配对。
+阴影表示配置的置信区间，图中还标记每个月面板的年度城市样本量范围。该区间描述
+当年跨城市中位数的不确定性，不是拟合时间趋势斜率的置信区间。默认 95% CI、
+1,000 次重抽样和固定随机种子，均可在 `scripts/analysis/config.json` 的 `eda`
+配置中调整。
+
+输出共 6 张图（2 个传感器 × 3 个纬度组），每张图包含 12 个月面板。所有传感器
+和分组共用对称纵轴范围，便于比较；结果保存在
+`results/figures/eda/yearly_trends/<sensor>/<latitude_group>/`。
+
 ## 6. 当前实现与数据状态
 
 - 旧的 1,700 个优先城市分析曾生成 510,000 行月度、171,700 行季节和
@@ -325,9 +350,11 @@ local_year  = year + floor(month_index / 12)
 - 当前环境尚未生成年度 clean Parquet 与 SUHI master/聚合表。将匹配年份的
   全量 rural 年度 CSV 放入配置目录后，运行本地预处理即可生成。
 - [`scripts/analysis/03_eda.py`](./scripts/analysis/03_eda.py) 已实现 Terra/Aqua
-  昼夜 SUHI 日历月汇总、逐年分面和 local-season 分纬度组图；三类 EDA 也可
+  昼夜 SUHI 日历月汇总、逐年分面、local-season 分纬度组图和年度 D/N/A 中位数
+  及 bootstrap CI；四类 EDA 也可
   分别由 `eda_calendar_months.py`、`eda_yearly_panels.py` 和
-  `eda_local_season.py` 独立运行。其他系统化 EDA 和统计建模尚未实现。
+  `eda_local_season.py`、`eda_yearly_trends.py` 独立运行。其他系统化 EDA 和统计
+  建模尚未实现。
 
 ## 7. 后续分析路线（待开展，不属于当前已完成处理）
 

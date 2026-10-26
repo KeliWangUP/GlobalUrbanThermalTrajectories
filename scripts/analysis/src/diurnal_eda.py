@@ -1,4 +1,5 @@
 import logging
+from math import isfinite
 
 import pandas as pd
 
@@ -267,15 +268,47 @@ def prepare_sensor_year_month_rows(
     return plotted_rows, summary
 
 
+def add_latitude_groups(
+    panel: pd.DataFrame,
+    equatorial_band_degrees: float
+) -> pd.DataFrame:
+    """Assign cities to northern, southern, or equatorial latitude groups."""
+    if (
+        isinstance(equatorial_band_degrees, bool)
+        or not isinstance(equatorial_band_degrees, (int, float))
+        or not isfinite(equatorial_band_degrees)
+        or not 0 <= equatorial_band_degrees <= 90
+    ):
+        raise ValueError(
+            "equatorial_band_degrees must be a finite number between 0 and 90."
+        )
+    if "centroid_lat" not in panel.columns:
+        raise ValueError("Latitude grouping requires a centroid_lat column.")
+
+    grouped = panel.copy()
+    centroid_latitude = pd.to_numeric(
+        grouped["centroid_lat"],
+        errors="raise"
+    )
+    if centroid_latitude.isna().any() or not centroid_latitude.between(
+        -90,
+        90
+    ).all():
+        raise ValueError("centroid_lat values must be finite and in [-90, 90].")
+
+    southern = centroid_latitude.lt(-equatorial_band_degrees)
+    northern = centroid_latitude.gt(equatorial_band_degrees)
+    grouped["latitude_group"] = "Equatorial Belt"
+    grouped.loc[northern, "latitude_group"] = "Northern Hemisphere"
+    grouped.loc[southern, "latitude_group"] = "Southern Hemisphere"
+    return grouped
+
+
 def add_local_season_coordinates(
     panel: pd.DataFrame,
     equatorial_band_degrees: float
 ) -> pd.DataFrame:
     """Shift southern observations and derive their aligned season year."""
-    if not 0 <= equatorial_band_degrees <= 90:
-        raise ValueError(
-            "equatorial_band_degrees must be between 0 and 90."
-        )
     required = {*KEY_COLUMNS, "centroid_lat"}
     missing = required - set(panel.columns)
     if missing:
@@ -288,28 +321,8 @@ def add_local_season_coordinates(
     if not panel[MONTH_COLUMN].between(1, 12).all():
         raise ValueError("Month values in the monthly SUHI panel must be 1..12.")
 
-    aligned = panel.copy()
-    centroid_latitude = pd.to_numeric(
-        aligned["centroid_lat"],
-        errors="raise"
-    )
-    if centroid_latitude.isna().any() or not centroid_latitude.between(
-        -90,
-        90
-    ).all():
-        raise ValueError("centroid_lat values must be finite and in [-90, 90].")
-
-    southern = centroid_latitude.lt(-equatorial_band_degrees)
-    northern = centroid_latitude.gt(equatorial_band_degrees)
-    aligned["latitude_group"] = "Equatorial Belt"
-    aligned.loc[
-        northern,
-        "latitude_group"
-    ] = "Northern Hemisphere"
-    aligned.loc[
-        southern,
-        "latitude_group"
-    ] = "Southern Hemisphere"
+    aligned = add_latitude_groups(panel, equatorial_band_degrees)
+    southern = aligned["latitude_group"].eq("Southern Hemisphere")
 
     month_index = (
         aligned[MONTH_COLUMN] - 1

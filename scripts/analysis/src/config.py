@@ -19,6 +19,9 @@ class EdaConfig:
     end_year: int
     city_month_aggregation: str
     equatorial_latitude_band_degrees: float
+    bootstrap_replicates: int
+    bootstrap_confidence_level: float
+    bootstrap_random_seed: int
     figure_dpi: int
 
 
@@ -132,6 +135,14 @@ def load_analysis_config(config_path: Path | None = None) -> AnalysisConfig:
         raise ValueError(
             "EDA equatorial_latitude_band_degrees must not exceed 90."
         )
+    bootstrap_confidence_level = _require_nonnegative_number(
+        eda_data,
+        "bootstrap_confidence_level"
+    )
+    if not 0 < bootstrap_confidence_level < 1:
+        raise ValueError(
+            "EDA bootstrap_confidence_level must be between 0 and 1."
+        )
 
     return AnalysisConfig(
         urban_raw_dir=_resolve_path(
@@ -174,6 +185,19 @@ def load_analysis_config(config_path: Path | None = None) -> AnalysisConfig:
             city_month_aggregation=city_month_aggregation,
             equatorial_latitude_band_degrees=(
                 equatorial_latitude_band_degrees
+            ),
+            bootstrap_replicates=_require_integer(
+                eda_data,
+                "bootstrap_replicates",
+                100,
+                20000
+            ),
+            bootstrap_confidence_level=bootstrap_confidence_level,
+            bootstrap_random_seed=_require_integer(
+                eda_data,
+                "bootstrap_random_seed",
+                0,
+                4294967295
             ),
             figure_dpi=_require_integer(eda_data, "figure_dpi", 72, 1200)
         ),
