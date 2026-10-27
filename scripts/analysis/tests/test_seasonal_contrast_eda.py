@@ -152,6 +152,39 @@ class SeasonalContrastEdaTests(unittest.TestCase):
                 + trends["gamma_rural_D"]
             ).abs().lt(1e-10).all()
         )
+        seasonal_summary = results.climate_season_summary
+        warm_urban = seasonal_summary.loc[
+            seasonal_summary["climate_group"].eq("All cities")
+            & seasonal_summary["sensor"].eq("terra")
+            & seasonal_summary["dataset"].eq("urban")
+            & seasonal_summary["metric"].eq("D")
+            & seasonal_summary["season"].eq("summer")
+        ].iloc[0]
+        cold_urban = seasonal_summary.loc[
+            seasonal_summary["climate_group"].eq("All cities")
+            & seasonal_summary["sensor"].eq("terra")
+            & seasonal_summary["dataset"].eq("urban")
+            & seasonal_summary["metric"].eq("D")
+            & seasonal_summary["season"].eq("winter")
+        ].iloc[0]
+        warm_rural = seasonal_summary.loc[
+            seasonal_summary["climate_group"].eq("All cities")
+            & seasonal_summary["sensor"].eq("terra")
+            & seasonal_summary["dataset"].eq("rural")
+            & seasonal_summary["metric"].eq("D")
+            & seasonal_summary["season"].eq("summer")
+        ].iloc[0]
+        cold_rural = seasonal_summary.loc[
+            seasonal_summary["climate_group"].eq("All cities")
+            & seasonal_summary["sensor"].eq("terra")
+            & seasonal_summary["dataset"].eq("rural")
+            & seasonal_summary["metric"].eq("D")
+            & seasonal_summary["season"].eq("winter")
+        ].iloc[0]
+        self.assertAlmostEqual(warm_urban["median_gamma_per_decade"], 3.0)
+        self.assertAlmostEqual(cold_urban["median_gamma_per_decade"], 1.0)
+        self.assertAlmostEqual(warm_rural["median_gamma_per_decade"], 2.0)
+        self.assertAlmostEqual(cold_rural["median_gamma_per_decade"], 1.0)
         summary = results.climate_summary.loc[
             results.climate_summary["climate_group"].eq("All cities")
             & results.climate_summary["sensor"].eq("terra")
@@ -188,8 +221,12 @@ class SeasonalContrastEdaTests(unittest.TestCase):
                 parquet_compression=config.parquet_compression,
                 dpi=30
             )
-            self.assertEqual(len(outputs), 7)
+            self.assertEqual(len(outputs), 8)
             self.assertTrue(all(path.is_file() for path in outputs))
+            self.assertIn(
+                "urban_rural_seasonal_lst_trends_2000-2020.png",
+                {path.name for path in outputs}
+            )
             label_table = pd.read_parquet(outputs[0])
             self.assertTrue({"is_summer", "is_winter"} <= set(label_table))
             self.assertEqual(str(label_table["is_summer"].dtype), "int8")

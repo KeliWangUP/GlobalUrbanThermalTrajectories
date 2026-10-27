@@ -109,6 +109,100 @@ def _plot_median_trends(
     plt.close(figure)
 
 
+def _plot_urban_rural_seasonal_trends(
+    summary: pd.DataFrame,
+    output_path: Path,
+    climate_groups: tuple[str, ...],
+    confidence_level: float,
+    dpi: int
+) -> None:
+    climate_order = _climate_order(climate_groups)
+    dataset_offsets = {"urban": -0.15, "rural": 0.15}
+    season_offsets = {"summer": -0.04, "winter": 0.04}
+    season_markers = {"summer": "^", "winter": "v"}
+    season_labels = {"summer": "Warm season", "winter": "Cold season"}
+    figure, axes = plt.subplots(
+        nrows=2,
+        ncols=3,
+        figsize=(19, 10),
+        sharey=True
+    )
+    for row, sensor in enumerate(SENSORS):
+        for column, metric in enumerate(METRICS):
+            axis = axes[row, column]
+            subset = summary.loc[
+                summary["sensor"].eq(sensor)
+                & summary["metric"].eq(metric)
+            ]
+            for dataset in ("urban", "rural"):
+                for season in ("summer", "winter"):
+                    data = (
+                        subset.loc[
+                            subset["dataset"].eq(dataset)
+                            & subset["season"].eq(season)
+                        ]
+                        .set_index("climate_group")
+                        .reindex(climate_order)
+                    )
+                    medians = data["median_gamma_per_decade"].to_numpy(
+                        dtype="float64"
+                    )
+                    lower = data["ci_lower"].to_numpy(dtype="float64")
+                    upper = data["ci_upper"].to_numpy(dtype="float64")
+                    valid = (
+                        np.isfinite(medians)
+                        & np.isfinite(lower)
+                        & np.isfinite(upper)
+                    )
+                    positions = np.arange(
+                        len(climate_order),
+                        dtype="float64"
+                    )
+                    positions += dataset_offsets[dataset]
+                    positions += season_offsets[season]
+                    axis.errorbar(
+                        positions[valid],
+                        medians[valid],
+                        yerr=np.vstack((
+                            np.maximum(0, medians[valid] - lower[valid]),
+                            np.maximum(0, upper[valid] - medians[valid])
+                        )),
+                        fmt=season_markers[season],
+                        markersize=4,
+                        capsize=2,
+                        linewidth=1,
+                        color=DATASET_COLORS[dataset],
+                        label=f"{dataset.title()} · {season_labels[season]}"
+                    )
+            axis.axhline(0, color="0.35", linewidth=0.8, linestyle="--")
+            axis.set_xticks(
+                np.arange(len(climate_order)),
+                climate_order,
+                rotation=40,
+                ha="right"
+            )
+            axis.set_title(f"{sensor.title()} — {METRIC_TITLES[metric]}")
+            axis.grid(axis="y", alpha=0.2, linewidth=0.5)
+            if column == 0:
+                axis.set_ylabel("Median LST trend (°C per decade)")
+    figure.suptitle(
+        "Warm- and cold-season urban/rural LST trends "
+        f"({confidence_level:.0%} city-bootstrap CI)"
+    )
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    figure.legend(
+        handles,
+        labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.94),
+        ncol=4,
+        frameon=False
+    )
+    figure.tight_layout(rect=(0.02, 0.03, 0.99, 0.88))
+    figure.savefig(output_path, dpi=dpi, bbox_inches="tight")
+    plt.close(figure)
+
+
 def _plot_positive_shares(
     summary: pd.DataFrame,
     output_path: Path,
@@ -236,6 +330,18 @@ def create_seasonal_contrast_outputs(
         dpi=dpi
     )
     outputs.append(median_plot)
+
+    seasonal_lst_plot = (
+        output_dir / f"urban_rural_seasonal_lst_trends_{period}.png"
+    )
+    _plot_urban_rural_seasonal_trends(
+        summary=results.climate_season_summary,
+        output_path=seasonal_lst_plot,
+        climate_groups=climate_groups,
+        confidence_level=confidence_level,
+        dpi=dpi
+    )
+    outputs.append(seasonal_lst_plot)
 
     share_plot = output_dir / f"positive_city_shares_{period}.png"
     _plot_positive_shares(

@@ -440,7 +440,11 @@ Climate 大区汇总报告 γ 中位数及跨城市 bootstrap CI，以及 γ 正
 符合年份和 QC 条件的非赤道城市。结果输出至
 `results/figures/eda/warm_cold_seasonal_contrasts/`，包括月度季节标签 Parquet、
 城市季节值、暖冷对比、城市 γ、气候区统计 CSV，以及中位趋势 CI 和正向城市比例
-图。该分析对应“SUHI 季节性是否系统变化”及“其变化如何与城乡季节循环相关”。
+图。另输出 `urban_rural_seasonal_lst_trends_<years>.png`，按 Terra/Aqua 和 D/N/A
+分面，分别展示 Urban/Rural 暖季与冷季的城市斜率中位数及 bootstrap CI。暖、冷季
+趋势在每个城市内使用相同的完整配对年份，因此可判断 contrast 变化与暖季升温、
+冷季降温或两者共同变化的关联。该分析对应“SUHI 季节性是否系统变化”及
+“其变化如何与城乡季节循环相关”。
 
 ## 6. 当前实现与数据状态
 

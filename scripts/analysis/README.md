@@ -267,6 +267,14 @@ OLS trend (γ, °C/decade) when at least `min_city_slope_years` complete paired
 years are available. For each city and metric, the decomposition is
 `γ_SUHI = γ_urban − γ_rural`, using the same months and years.
 
+An additional figure estimates the urban and rural LST trends separately for
+warm and cold seasons. It uses the same complete paired years for both seasons
+within each city, so the two slopes can be compared directly to identify
+whether a changing seasonal contrast is associated with warm-season warming,
+cold-season cooling, or both. Points show climate-group median city slopes and
+city-bootstrap confidence intervals; the six panels separate Terra/Aqua and
+D/N/A.
+
 Climate-group summaries include median γ and a city-bootstrap confidence
 interval, along with the shares of eligible cities having positive, negative,
 or zero γ. A median direction is labeled increasing/decreasing only when
@@ -280,4 +288,5 @@ Tables and figures are saved under
 `results/figures/eda/warm_cold_seasonal_contrasts/`: city-month season labels
 (Parquet), city-year-season values, annual warm-minus-cold contrasts,
 city-level γ estimates, climate-group summaries (CSV), median-trend CI
-figures, and positive-city-share figures.
+figures, positive-city-share figures, and the separate warm/cold urban/rural
+LST trend figure.

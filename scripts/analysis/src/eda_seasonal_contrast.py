@@ -28,6 +28,7 @@ class SeasonalContrastResults:
     city_year_contrasts: pd.DataFrame
     city_trends: pd.DataFrame
     climate_summary: pd.DataFrame
+    climate_season_summary: pd.DataFrame
 
 
 def _validate_months(
@@ -412,6 +413,151 @@ def _summarize_climate_trends(
     return pd.DataFrame.from_records(records)
 
 
+def _fit_city_season_trends(
+    city_year_seasons: pd.DataFrame,
+    city_year_contrasts: pd.DataFrame,
+    minimum_years: int
+) -> pd.DataFrame:
+    identity_columns = [
+        CITY_COLUMN,
+        "centroid_lat",
+        LATITUDE_GROUP_COLUMN,
+        CLIMATE_COLUMN
+    ]
+    records = []
+    for sensor in SENSORS:
+        contrast_columns = [
+            f"contrast_{sensor}_{dataset}_{metric}"
+            for dataset in DATASETS
+            for metric in METRICS
+        ]
+        value_columns = [
+            f"{sensor}_{dataset}_{metric}"
+            for dataset in DATASETS
+            for metric in METRICS
+        ]
+        for identity, city_rows in city_year_contrasts.groupby(
+            identity_columns,
+            sort=True,
+            dropna=False
+        ):
+            complete = city_rows.dropna(subset=contrast_columns)
+            year_values = np.sort(complete["season_year"].unique())
+            if len(year_values) < minimum_years:
+                continue
+            years = year_values.astype("float64")
+            centered_years = years - years.mean()
+            denominator = np.dot(centered_years, centered_years)
+            if denominator <= 0:
+                continue
+
+            city_seasons = city_year_seasons.loc[
+                city_year_seasons[CITY_COLUMN].eq(identity[0])
+                & city_year_seasons["season_year"].isin(year_values)
+            ].set_index(["season_year", "season"])
+            paired_index = pd.MultiIndex.from_product(
+                [year_values, ("summer", "winter")],
+                names=("season_year", "season")
+            )
+            city_seasons = city_seasons.reindex(paired_index)
+            for season in ("summer", "winter"):
+                seasonal_rows = city_seasons.xs(season, level="season")
+                record = dict(zip(identity_columns, identity))
+                record["sensor"] = sensor
+                record["season"] = season
+                record["n_valid_paired_years"] = len(years)
+                for column in value_columns:
+                    observations = seasonal_rows[column].to_numpy(
+                        dtype="float64"
+                    )
+                    if not np.isfinite(observations).all():
+                        raise ValueError(
+                            "Seasonal LST trends require finite values for "
+                            "every paired contrast year."
+                        )
+                    slope = np.dot(
+                        centered_years,
+                        observations - observations.mean()
+                    ) / denominator
+                    dataset_metric = column.removeprefix(f"{sensor}_")
+                    record[f"gamma_{dataset_metric}"] = slope * 10
+                records.append(record)
+
+    columns = [
+        *identity_columns,
+        "sensor",
+        "season",
+        "n_valid_paired_years",
+        *[
+            f"gamma_{dataset}_{metric}"
+            for dataset in DATASETS
+            for metric in METRICS
+        ]
+    ]
+    return pd.DataFrame.from_records(records, columns=columns)
+
+
+def _summarize_climate_season_trends(
+    city_season_trends: pd.DataFrame,
+    climate_groups: tuple[str, ...],
+    bootstrap_replicates: int,
+    confidence_level: float,
+    random_seed: int
+) -> pd.DataFrame:
+    trend_rows = city_season_trends.copy()
+    trend_rows["climate_group"] = (
+        trend_rows[CLIMATE_COLUMN].fillna("Unclassified")
+    )
+    group_names = list(dict.fromkeys([
+        "All cities",
+        *climate_groups,
+        "Unclassified"
+    ]))
+    generator = np.random.default_rng(random_seed)
+    records = []
+
+    for sensor in SENSORS:
+        sensor_rows = trend_rows.loc[trend_rows["sensor"].eq(sensor)]
+        for group_name in group_names:
+            if group_name == "All cities":
+                group_rows = sensor_rows
+            else:
+                group_rows = sensor_rows.loc[
+                    sensor_rows["climate_group"].eq(group_name)
+                ]
+            for dataset in DATASETS:
+                for metric in METRICS:
+                    for season in ("summer", "winter"):
+                        values = group_rows.loc[
+                            group_rows["season"].eq(season),
+                            f"gamma_{dataset}_{metric}"
+                        ].dropna().to_numpy(dtype="float64")
+                        if len(values):
+                            median = float(np.median(values))
+                            lower, upper = _bootstrap_median_interval(
+                                values,
+                                bootstrap_replicates,
+                                confidence_level,
+                                generator
+                            )
+                        else:
+                            median = lower = upper = np.nan
+                        records.append({
+                            "climate_group": group_name,
+                            "sensor": sensor,
+                            "dataset": dataset,
+                            "metric": metric,
+                            "season": season,
+                            "n_cities": len(values),
+                            "median_gamma_per_decade": median,
+                            "ci_lower": lower,
+                            "ci_upper": upper,
+                            "confidence_level": confidence_level,
+                            "bootstrap_replicates": bootstrap_replicates
+                        })
+    return pd.DataFrame.from_records(records)
+
+
 def analyze_seasonal_contrasts(
     panel: pd.DataFrame,
     start_year: int,
@@ -517,6 +663,18 @@ def analyze_seasonal_contrasts(
             "No cities have enough complete warm/cold contrast years for "
             f"trend estimation (minimum={minimum_trend_years})."
         )
+    city_season_trends = _fit_city_season_trends(
+        city_year_seasons=city_year_seasons,
+        city_year_contrasts=city_year_contrasts,
+        minimum_years=minimum_trend_years
+    )
+    climate_season_summary = _summarize_climate_season_trends(
+        city_season_trends=city_season_trends,
+        climate_groups=climate_groups,
+        bootstrap_replicates=bootstrap_replicates,
+        confidence_level=confidence_level,
+        random_seed=random_seed
+    )
     climate_summary = _summarize_climate_trends(
         city_trends=city_trends,
         climate_groups=climate_groups,
@@ -529,5 +687,6 @@ def analyze_seasonal_contrasts(
         city_year_seasons=city_year_seasons,
         city_year_contrasts=city_year_contrasts,
         city_trends=city_trends,
-        climate_summary=climate_summary
+        climate_summary=climate_summary,
+        climate_season_summary=climate_season_summary
     )
