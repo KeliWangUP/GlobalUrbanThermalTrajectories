@@ -128,9 +128,9 @@ def build_city_statistics(
 
     def _combine_statistics(feature: ee.Feature) -> ee.Feature:
         count_feature = ee.Feature(feature.get("_pixel_count_feature"))
-        return feature.setMulti(
+        return ee.Feature(feature).set(
             count_feature.toDictionary(count_fields)
-        ).select(selectors, None, False)
+        )
 
     return joined.map(_combine_statistics), selectors
 
