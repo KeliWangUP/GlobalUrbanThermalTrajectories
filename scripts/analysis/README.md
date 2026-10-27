@@ -10,7 +10,7 @@ data/
 ├── raw/
 │   ├── urban/
 │   ├── rural/
-│   ├── rural_all_cities/
+│   ├── rural_all/
 │   ├── GHSL_bounds_shp/
 │   └── Beck_KG_V1_present_0p0083.tif
 ├── parquet/
@@ -29,7 +29,7 @@ left untouched.
 
 The old priority-only rural CSVs remain in `data/raw/rural`. The analysis
 config now reads the replacement all-city exports from
-`data/raw/rural_all_cities`, so the two datasets are not mixed or mistaken for
+`data/raw/rural_all`, so the two datasets are not mixed or mistaken for
 duplicate years.
 
 Input directories, output file paths, and Parquet compression are set in

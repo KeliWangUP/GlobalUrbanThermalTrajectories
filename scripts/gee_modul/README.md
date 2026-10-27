@@ -29,7 +29,7 @@ Large-city fraction computation may still split that city's fraction image
 into MODIS-aligned subtiles. This is per-city fraction chunking, not the
 retired tile-batch temperature export path.
 
-Download these annual CSVs into `data/raw/rural_all_cities` for the analysis
+Download these annual CSVs into `data/raw/rural_all` for the analysis
 pipeline. Keep the earlier priority-only CSVs in their existing
 `data/raw/rural` folder; the analysis config reads only the all-city folder.
 

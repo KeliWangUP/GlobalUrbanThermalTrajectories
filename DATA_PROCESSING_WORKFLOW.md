@@ -144,7 +144,7 @@ python scripts/gee_modul/export_rural_all_cities_annual.py
 ```
 
 导出任务提交成功不等于任务完成。等待 Earth Engine 任务成功后，再从 Drive
-下载年度 CSV。全量乡村文件放入 `data/raw/rural_all_cities`；不要与旧优先
+下载年度 CSV。全量乡村文件放入 `data/raw/rural_all`；不要与旧优先
 城市文件 `data/raw/rural` 混放，否则会造成同一年有多个输入文件。
 
 ## 4. 本地数据层级
@@ -154,7 +154,7 @@ data/
 ├── raw/                          # 下载的原始 CSV，保留不改写
 │   ├── urban/
 │   ├── rural/                    # 旧优先城市数据，非当前全量输入
-│   ├── rural_all_cities/         # 当前配置的乡村全量输入目录
+│   ├── rural_all/                # 当前配置的乡村全量输入目录
 │   ├── GHSL_bounds_shp/          # 城市边界 Shapefile（原始投影）
 │   └── Beck_KG_V1_present_0p0083.tif  # Köppen-Geiger 现状气候分类
 ├── parquet/                      # 按年清洗后的 Parquet
