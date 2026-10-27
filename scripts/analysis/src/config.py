@@ -27,6 +27,14 @@ class EdaConfig:
 
 
 @dataclass(frozen=True)
+class SeasonalContrastConfig:
+    northern_summer_months: tuple[int, ...]
+    northern_winter_months: tuple[int, ...]
+    minimum_valid_months_per_season: int
+    equatorial_policy: str
+
+
+@dataclass(frozen=True)
 class AnalysisConfig:
     urban_raw_dir: Path
     rural_raw_dir: Path
@@ -42,6 +50,7 @@ class AnalysisConfig:
     eda_log_dir: Path
     parquet_compression: str
     eda: EdaConfig
+    seasonal_contrast: SeasonalContrastConfig
     quality_control: QualityControlConfig
     cz_macro_groups: dict[str, tuple[int, ...]]
 
@@ -59,6 +68,29 @@ def _require_string(mapping: dict[str, object], name: str) -> str:
             f"Analysis config field '{name}' must be a non-empty string."
         )
     return value
+
+
+def _require_month_triplet(
+    mapping: dict[str, object],
+    name: str
+) -> tuple[int, int, int]:
+    value = mapping.get(name)
+    if (
+        not isinstance(value, list)
+        or len(value) != 3
+        or any(
+            isinstance(month, bool)
+            or not isinstance(month, int)
+            or month not in range(1, 13)
+            for month in value
+        )
+        or len(set(value)) != 3
+    ):
+        raise ValueError(
+            f"Analysis config field '{name}' must contain three unique "
+            "month numbers in 1..12."
+        )
+    return value[0], value[1], value[2]
 
 
 def _require_integer(
@@ -156,6 +188,10 @@ def load_analysis_config(config_path: Path | None = None) -> AnalysisConfig:
     paths = _require_object(root.get("paths"), "paths")
     parquet = _require_object(root.get("parquet"), "parquet")
     eda_data = _require_object(root.get("eda"), "eda")
+    seasonal_contrast_data = _require_object(
+        root.get("seasonal_contrast"),
+        "seasonal_contrast"
+    )
     quality_control_data = _require_object(
         root.get("quality_control"),
         "quality_control"
@@ -190,6 +226,27 @@ def load_analysis_config(config_path: Path | None = None) -> AnalysisConfig:
     if not 0 < bootstrap_confidence_level < 1:
         raise ValueError(
             "EDA bootstrap_confidence_level must be between 0 and 1."
+        )
+    northern_summer_months = _require_month_triplet(
+        seasonal_contrast_data,
+        "northern_summer_months"
+    )
+    northern_winter_months = _require_month_triplet(
+        seasonal_contrast_data,
+        "northern_winter_months"
+    )
+    if set(northern_summer_months) & set(northern_winter_months):
+        raise ValueError(
+            "Northern summer and winter month lists must not overlap."
+        )
+    equatorial_policy = _require_string(
+        seasonal_contrast_data,
+        "equatorial_policy"
+    )
+    if equatorial_policy != "exclude":
+        raise ValueError(
+            "seasonal_contrast.equatorial_policy currently supports only "
+            "'exclude'."
         )
 
     return AnalysisConfig(
@@ -257,6 +314,17 @@ def load_analysis_config(config_path: Path | None = None) -> AnalysisConfig:
                 4294967295
             ),
             figure_dpi=_require_integer(eda_data, "figure_dpi", 72, 1200)
+        ),
+        seasonal_contrast=SeasonalContrastConfig(
+            northern_summer_months=northern_summer_months,
+            northern_winter_months=northern_winter_months,
+            minimum_valid_months_per_season=_require_integer(
+                seasonal_contrast_data,
+                "minimum_valid_months_per_season",
+                1,
+                3
+            ),
+            equatorial_policy=equatorial_policy
         ),
         quality_control=QualityControlConfig(
             min_valid_pixels_per_side_slot=_require_integer(

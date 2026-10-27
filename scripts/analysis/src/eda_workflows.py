@@ -21,6 +21,10 @@ from src.eda_visualizations.year_panels import (
 from src.eda_visualizations.yearly_trends import (
     create_yearly_trend_figures
 )
+from src.eda_seasonal_contrast import analyze_seasonal_contrasts
+from src.eda_visualizations.seasonal_contrasts import (
+    create_seasonal_contrast_outputs
+)
 
 
 LOGGER = logging.getLogger("diurnal_eda")
@@ -79,6 +83,8 @@ def run_eda_workflow(workflow_name: str) -> None:
             workflows = ("city_slopes",)
         elif workflow_name == "climate_month_trends":
             workflows = ("climate_month_trends",)
+        elif workflow_name == "seasonal_contrasts":
+            workflows = ("seasonal_contrasts",)
         elif workflow_name == "all":
             workflows = (
                 "calendar_months",
@@ -86,7 +92,8 @@ def run_eda_workflow(workflow_name: str) -> None:
                 "local_season",
                 "yearly_trends",
                 "city_slopes",
-                "climate_month_trends"
+                "climate_month_trends",
+                "seasonal_contrasts"
             )
         else:
             raise ValueError(f"Unknown EDA workflow: {workflow_name}")
@@ -98,10 +105,12 @@ def run_eda_workflow(workflow_name: str) -> None:
                 or "yearly_trends" in workflows
                 or "city_slopes" in workflows
                 or "climate_month_trends" in workflows
+                or "seasonal_contrasts" in workflows
             ),
             require_climate_macro_group=(
                 "city_slopes" in workflows
                 or "climate_month_trends" in workflows
+                or "seasonal_contrasts" in workflows
             )
         )
         for workflow in workflows:
@@ -169,6 +178,44 @@ def run_eda_workflow(workflow_name: str) -> None:
                     climate_groups=tuple(config.cz_macro_groups),
                     dpi=config.eda.figure_dpi
                 )
+            elif workflow == "seasonal_contrasts":
+                seasonal_results = analyze_seasonal_contrasts(
+                    panel=panel,
+                    start_year=config.eda.start_year,
+                    end_year=config.eda.end_year,
+                    equatorial_band_degrees=(
+                        config.eda.equatorial_latitude_band_degrees
+                    ),
+                    northern_summer_months=(
+                        config.seasonal_contrast.northern_summer_months
+                    ),
+                    northern_winter_months=(
+                        config.seasonal_contrast.northern_winter_months
+                    ),
+                    minimum_valid_months_per_season=(
+                        config.seasonal_contrast
+                        .minimum_valid_months_per_season
+                    ),
+                    minimum_trend_years=config.eda.min_city_slope_years,
+                    climate_groups=tuple(config.cz_macro_groups),
+                    bootstrap_replicates=config.eda.bootstrap_replicates,
+                    confidence_level=(
+                        config.eda.bootstrap_confidence_level
+                    ),
+                    random_seed=config.eda.bootstrap_random_seed
+                )
+                outputs = create_seasonal_contrast_outputs(
+                    results=seasonal_results,
+                    output_dir=config.eda_figure_dir,
+                    start_year=config.eda.start_year,
+                    end_year=config.eda.end_year,
+                    climate_groups=tuple(config.cz_macro_groups),
+                    confidence_level=(
+                        config.eda.bootstrap_confidence_level
+                    ),
+                    parquet_compression=config.parquet_compression,
+                    dpi=config.eda.figure_dpi
+                )
             else:
                 outputs = create_climate_month_trend_heatmaps(
                     panel=panel,
@@ -188,7 +235,7 @@ def run_eda_workflow(workflow_name: str) -> None:
                     dpi=config.eda.figure_dpi
                 )
             LOGGER.info(
-                "Workflow '%s' created %s figures.",
+                "Workflow '%s' created %s output artifacts.",
                 workflow,
                 len(outputs)
             )

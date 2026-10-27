@@ -143,7 +143,7 @@ repository-root `logs/` directory. The directory is created automatically;
 `01_convert_exports.py` and `02_build_monthly_suhi.py` still log to the
 terminal only.
 
-`03_eda.py` runs all six EDA modules. Each can also be run independently:
+`03_eda.py` runs all seven EDA modules. Each can also be run independently:
 
 ```bash
 python scripts/analysis/eda_calendar_months.py
@@ -152,6 +152,7 @@ python scripts/analysis/eda_local_season.py
 python scripts/analysis/eda_yearly_trends.py
 python scripts/analysis/eda_city_slopes.py
 python scripts/analysis/eda_climate_month_trends.py
+python scripts/analysis/eda_seasonal_contrasts.py
 ```
 
 The local-season module uses `centroid_lat` to group cities into Northern
@@ -244,3 +245,39 @@ Run the module independently with:
 ```bash
 python scripts/analysis/eda_climate_month_trends.py
 ```
+
+The warm/cold seasonal-contrast EDA addresses two related questions: whether
+the seasonal contrast of daytime/nighttime SUHI is changing, and how much of
+that change accompanies seasonal changes in urban versus rural LST. Northern
+summer and winter are configured as June–August and December–February;
+Southern Hemisphere assignments are reversed. December is assigned to the
+following season year. Each city-month gets derived integer `is_summer` and
+`is_winter` flags; shoulder months have both flags set to 0. The flags are
+written to a separate Parquet sidecar and do not modify the source monthly
+SUHI file. Cities in the configured equatorial band (currently ±10°) are
+retained in that sidecar with both flags 0, but excluded from the warm/cold
+season analysis.
+
+The seasonal calculation uses paired day/night QC-passing observations and
+requires all three months in each season by default. It writes one row per
+city × season year × season containing Terra/Aqua daytime, nighttime, and
+day–night contrast values for urban LST, rural LST, and SUHI. It then
+calculates each city's annual warm-minus-cold contrast and fits a city-level
+OLS trend (γ, °C/decade) when at least `min_city_slope_years` complete paired
+years are available. For each city and metric, the decomposition is
+`γ_SUHI = γ_urban − γ_rural`, using the same months and years.
+
+Climate-group summaries include median γ and a city-bootstrap confidence
+interval, along with the shares of eligible cities having positive, negative,
+or zero γ. A median direction is labeled increasing/decreasing only when
+there are at least two cities and its configured confidence interval excludes
+zero; the city shares are descriptive and are not counts of individually
+significant city trends. `All cities` includes eligible classified and
+unclassified cities outside the equatorial band. This decomposition describes
+associations and is not by itself a causal attribution.
+
+Tables and figures are saved under
+`results/figures/eda/warm_cold_seasonal_contrasts/`: city-month season labels
+(Parquet), city-year-season values, annual warm-minus-cold contrasts,
+city-level γ estimates, climate-group summaries (CSV), median-trend CI
+figures, and positive-city-share figures.

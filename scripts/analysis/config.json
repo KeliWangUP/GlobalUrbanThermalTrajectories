@@ -27,6 +27,12 @@
     "bootstrap_random_seed": 42,
     "figure_dpi": 300
   },
+  "seasonal_contrast": {
+    "northern_summer_months": [6, 7, 8],
+    "northern_winter_months": [12, 1, 2],
+    "minimum_valid_months_per_season": 3,
+    "equatorial_policy": "exclude"
+  },
   "quality_control": {
     "min_valid_pixels_per_side_slot": 5,
     "min_clear_days_mean_per_side_slot": 4.0,

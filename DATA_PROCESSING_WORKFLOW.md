@@ -411,6 +411,37 @@ bootstrap 次数的长表 CSV。结果位于
 随机种子沿用 `eda.bootstrap_replicates`、`eda.bootstrap_confidence_level`、
 `eda.bootstrap_random_seed` 配置。
 
+### 5.9 暖季—冷季 SUHI 差异及城乡分解
+
+单独运行：
+
+```bash
+python scripts/analysis/eda_seasonal_contrasts.py
+```
+
+也可通过 `03_eda.py` 运行。北半球暖季默认为 6–8 月、冷季为 12–2 月；
+南半球反过来。12 月归入下一 season year（例如 2000 年 12 月与 2001 年
+1–2 月组成 season year 2001）。每条城市月度记录内部派生整数标签
+`is_summer` 和 `is_winter`：对应季节为 1，肩季月份为 0。标签另存为 Parquet，
+不会改写月度 master 文件。赤道带按 `eda.equatorial_latitude_band_degrees`
+配置（当前 ±10°）排除在暖冷季主分析之外，标签表中仍保留且两标志均为 0。
+
+每个城市—季节年只有当该季节三个月均通过该传感器的昼夜配对 QC 时才计算季节
+均值（可由 `seasonal_contrast.minimum_valid_months_per_season` 配置，默认 3）。
+同一有效月份集同时用于 urban LST、rural LST 和 SUHI，以保持分解可比。输出
+`City × Year × Season` 的 Terra/Aqua D、N、A，再逐城市逐年计算
+`C = warm − cold`。对至少有 `eda.min_city_slope_years` 个完整冷暖对比年份的城市，
+用 OLS 估计 γ（°C/decade）。由于城乡和 SUHI 使用同一配对月份和年份，城市级
+分量满足 `γ_SUHI = γ_urban − γ_rural`；这表示数值分解，不代表因果归因。
+
+Climate 大区汇总报告 γ 中位数及跨城市 bootstrap CI，以及 γ 正、负、零的城市
+比例。至少两个城市且中位数 CI 不跨 0 时，标记中位趋势为上升或下降；正负比例
+描述城市斜率方向，不表示单个城市趋势显著。`All cities` 汇总包含气候未分类但
+符合年份和 QC 条件的非赤道城市。结果输出至
+`results/figures/eda/warm_cold_seasonal_contrasts/`，包括月度季节标签 Parquet、
+城市季节值、暖冷对比、城市 γ、气候区统计 CSV，以及中位趋势 CI 和正向城市比例
+图。该分析对应“SUHI 季节性是否系统变化”及“其变化如何与城乡季节循环相关”。
+
 ## 6. 当前实现与数据状态
 
 - 旧的 1,700 个优先城市分析曾生成 510,000 行月度、171,700 行季节和
@@ -429,10 +460,12 @@ bootstrap 次数的长表 CSV。结果位于
 - [`scripts/analysis/03_eda.py`](./scripts/analysis/03_eda.py) 已实现 Terra/Aqua
   昼夜 SUHI 日历月汇总、逐年分面、local-season 分纬度组图和年度 D/N/A/M 中位数
   及 bootstrap CI、城市级 `(βD, βN)` 年趋势散点，以及 Climate × local-season
-  Month 的 βD/βN/βA 趋势统计热图；六类 EDA 也可
+  Month 的 βD/βN/βA 趋势统计热图，以及暖季—冷季 SUHI 差异和城乡分解；
+  EDA 模块也可
   分别由 `eda_calendar_months.py`、`eda_yearly_panels.py` 和
   `eda_local_season.py`、`eda_yearly_trends.py`、`eda_city_slopes.py`、
-  `eda_climate_month_trends.py` 独立运行。其他系统化 EDA 和统计建模尚未实现。
+  `eda_climate_month_trends.py` 和 `eda_seasonal_contrasts.py` 独立运行。
+  其他系统化 EDA 和统计建模尚未实现。
 
 ## 7. 后续分析路线（待开展，不属于当前已完成处理）
 
