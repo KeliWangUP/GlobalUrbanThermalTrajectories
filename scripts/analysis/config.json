@@ -1,6 +1,6 @@
 {
   "paths": {
-    "urban_raw_dir": "../../data/raw/urban",
+    "urban_raw_dir": "../../data/raw/city_lst",
     "rural_raw_dir": "../../data/raw/rural_all",
     "urban_parquet_dir": "../../data/parquet/urban",
     "rural_parquet_dir": "../../data/parquet/rural",
