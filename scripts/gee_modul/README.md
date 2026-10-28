@@ -75,9 +75,9 @@ To check one sample point from the city configured at `test.city_id`, run:
 python scripts/gee_modul/test_samplepoint_attributes.py
 ```
 
-The check evaluates one point in that city and validates the ISA histogram,
-its per-class fractions, the water fraction range, and availability of GHSL
-pixels. It does not submit an export task.
+The check evaluates one point in that city and validates the annual ISA urban
+fractions, the water fraction range, and availability of
+GHSL pixels. It does not submit an export task.
 
 To submit exports for all sample points, run:
 
@@ -90,14 +90,18 @@ cities (currently 50), with one output row per sample point. It also supports
 the `samplepoint_attributes` target in `run_export.py`; add that target to
 `export.targets` only when intentionally submitting these tasks.
 
-`isa_value_counts` and `isa_value_fractions` are JSON strings with one key
-for every configured ISA class (currently `0` through `38`). A class with no
-pixels in a cell is included with count/fraction `0`. The band is selected
-from `samplepoint_attributes.isa_band`; when that field is `null`, the asset
-must contain exactly one band. Counts use unweighted native ISA pixels whose
-centers fall inside the MODIS cell; fractions are normalized pixel-count
-shares, not area-weighted fractions. This preserves the raw class histogram
-for later year-to-class mapping.
+For each configured year from 1985 through 2021, the export contains
+`isa_urban_fraction_YEAR`. ISA values `0` and `2`-`38` are treated as valid;
+`0` means non-urban and `2`-`38` encode the year of urban expansion, with
+`2` = 2021, `3` = 2020, ..., `38` = 1985 or earlier. The fraction for year
+`Y` is the number of valid ISA pixels that are already urban by the end of
+year `Y`, divided by all valid ISA pixels in that MODIS cell. In code terms,
+urban pixels satisfy `ISA >= 2023 - Y`; therefore the fraction for a later
+year cannot be lower than the fraction for an earlier year. Fractions use
+unweighted native ISA pixel counts, not area weighting. No-data and values
+outside the defined valid classes are excluded. The band is selected from
+`samplepoint_attributes.isa_band`; when that field is `null`, the asset must
+contain exactly one band.
 
 For GHSL, the export contains the mean and valid 100 m pixel count for
 `built_surface` (m² per source pixel) and `built_volume_total` (m³ per source

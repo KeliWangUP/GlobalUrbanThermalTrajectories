@@ -10,7 +10,7 @@ class SamplePointSources:
     isa_projection: ee.Projection
     isa_scale: float
     isa_band: str
-    isa_class_values: tuple[int, ...]
+    isa_years: tuple[int, ...]
     ghsl_image: ee.Image
     ghsl_projection: ee.Projection
     ghsl_fields: list[str]
@@ -32,10 +32,11 @@ def build_samplepoint_selectors(
     ]
     if config["sample_points"]["include_lonlat"]:
         selectors.extend(["lon", "lat"])
+    selectors.extend(
+        f"isa_urban_fraction_{year}"
+        for year in config["samplepoint_attributes"]["isa_years"]
+    )
     selectors.extend([
-        "isa_value_counts",
-        "isa_value_fractions",
-        "isa_valid_pixel_count",
         "water_area_m2",
         "water_valid_area_m2",
         "water_fraction"
@@ -84,18 +85,15 @@ def prepare_samplepoint_sources(
         )
 
     isa_image = ee.Image(isa_asset)
-    class_values = attribute_config["isa_class_values"]
+    isa_years = attribute_config["isa_years"]
     if (
-        not isinstance(class_values, list)
-        or any(
-            isinstance(value, bool) or not isinstance(value, int)
-            for value in class_values
-        )
-        or class_values != list(range(39))
+        not isinstance(isa_years, list)
+        or any(type(year) is not int for year in isa_years)
+        or isa_years != list(range(1985, 2022))
     ):
         raise ValueError(
-            "samplepoint_attributes.isa_class_values must list every "
-            "integer from 0 through 38 in order."
+            "samplepoint_attributes.isa_years must list every year from "
+            "1985 through 2021 in order."
         )
     isa_band = _resolve_isa_band(
         isa_image,
@@ -174,7 +172,7 @@ def prepare_samplepoint_sources(
         isa_projection=isa_projection,
         isa_scale=isa_scale,
         isa_band=isa_band,
-        isa_class_values=tuple(class_values),
+        isa_years=tuple(isa_years),
         ghsl_image=ghsl_image,
         ghsl_projection=ghsl_projection,
         ghsl_fields=ghsl_fields,
@@ -204,13 +202,26 @@ def _build_cell_regions(
         raise ValueError(
             "samplepoint_attributes.geometry_error_m must be positive."
         )
-    max_error_margin = ee.ErrorMargin(max_error, "projected")
+    max_error_margin = ee.ErrorMargin(max_error, "meters")
 
     def _to_cell(feature: ee.Feature) -> ee.Feature:
-        geometry = (
+        coordinates = ee.List(
             feature.geometry()
-            .buffer(scale / 2, maxError=max_error_margin, proj=projection)
-            .bounds(maxError=max_error_margin, proj=projection)
+            .transform(projection, maxError=max_error_margin)
+            .coordinates()
+        )
+        center_x = ee.Number(coordinates.get(0))
+        center_y = ee.Number(coordinates.get(1))
+        half_scale = ee.Number(scale).divide(2)
+        geometry = ee.Geometry.Rectangle(
+            [
+                center_x.subtract(half_scale),
+                center_y.subtract(half_scale),
+                center_x.add(half_scale),
+                center_y.add(half_scale)
+            ],
+            proj=projection,
+            geodesic=False
         )
         return ee.Feature(
             geometry,
@@ -218,43 +229,6 @@ def _build_cell_regions(
         )
 
     return points.map(_to_cell)
-
-
-def _encode_histogram(
-    histogram: ee.Dictionary,
-    class_values: tuple[int, ...],
-    divisor: ee.Number,
-    decimal_places: int
-) -> ee.String:
-    format_string = f"%.{decimal_places}f"
-
-    def _encode_value(class_value: ee.ComputedObject) -> ee.String:
-        class_number = ee.Number(class_value)
-        count = _histogram_count(histogram, class_number)
-        value = count.divide(divisor)
-        return (
-            ee.String('"')
-            .cat(class_number.format("%d"))
-            .cat('":')
-            .cat(value.format(format_string))
-        )
-
-    pairs = ee.List(class_values).map(_encode_value)
-    return ee.String("{").cat(pairs.join(",")).cat("}")
-
-
-def _histogram_count(
-    histogram: ee.Dictionary,
-    class_value: ee.Number
-) -> ee.Number:
-    integer_key = class_value.format("%d")
-    decimal_key = class_value.format("%.1f")
-    return ee.Number(
-        histogram.get(
-            integer_key,
-            histogram.get(decimal_key, 0)
-        )
-    )
 
 
 def _join_by_point_and_city(
@@ -308,10 +282,27 @@ def build_samplepoint_attribute_collection(
         projection=projection,
         scale=modis_scale
     )
-    isa_reducer = ee.Reducer.frequencyHistogram().unweighted()
-    isa_stats = sources.isa_image.rename("isa_class").reduceRegions(
+    isa_valid = (
+        sources.isa_image.eq(0)
+        .Or(
+            sources.isa_image.gte(2)
+            .And(sources.isa_image.lte(38))
+        )
+    )
+    isa_fraction_bands = [
+        sources.isa_image.gte(2023 - year)
+        .updateMask(isa_valid)
+        .rename(f"isa_urban_fraction_{year}")
+        for year in sources.isa_years
+    ]
+    isa_fraction_image = ee.Image.cat(isa_fraction_bands)
+    isa_fields = [
+        f"isa_urban_fraction_{year}"
+        for year in sources.isa_years
+    ]
+    isa_stats = isa_fraction_image.reduceRegions(
         collection=cells,
-        reducer=isa_reducer,
+        reducer=ee.Reducer.mean().unweighted(),
         crs=sources.isa_projection,
         scale=sources.isa_scale,
         tileScale=tile_scale,
@@ -366,42 +357,6 @@ def build_samplepoint_attribute_collection(
     base_fields = selectors[:base_field_count]
 
     def _format_feature(feature: ee.Feature) -> ee.Feature:
-        raw_histogram = ee.Dictionary(
-            ee.Algorithms.If(
-                feature.get("isa_class"),
-                feature.get("isa_class"),
-                ee.Dictionary({})
-            )
-        )
-        class_values = sources.isa_class_values
-        class_counts = ee.List(class_values).map(
-            lambda class_value: _histogram_count(
-                raw_histogram,
-                ee.Number(class_value)
-            )
-        )
-        isa_total = ee.Number(
-            class_counts.reduce(ee.Reducer.sum())
-        )
-        isa_fraction_denominator = ee.Number(
-            ee.Algorithms.If(isa_total.gt(0), isa_total, 1)
-        )
-        isa_properties = ee.Dictionary({
-            "isa_value_counts": _encode_histogram(
-                raw_histogram,
-                class_values,
-                ee.Number(1),
-                0
-            ),
-            "isa_value_fractions": _encode_histogram(
-                raw_histogram,
-                class_values,
-                isa_fraction_denominator,
-                8
-            ),
-            "isa_valid_pixel_count": isa_total
-        })
-
         water_feature = ee.Feature(feature.get("_water_stats"))
         water_stats_dictionary = ee.Dictionary(
             water_feature.toDictionary()
@@ -425,7 +380,10 @@ def build_samplepoint_attribute_collection(
         ghsl_feature = ee.Feature(feature.get("_ghsl_stats"))
         properties = (
             ee.Dictionary(feature.toDictionary(base_fields))
-            .combine(isa_properties, overwrite=True)
+            .combine(
+                ee.Dictionary(feature.toDictionary(isa_fields)),
+                overwrite=True
+            )
             .combine(water_properties, overwrite=True)
             .combine(
                 ee.Dictionary(ghsl_feature.toDictionary(sources.ghsl_fields)),

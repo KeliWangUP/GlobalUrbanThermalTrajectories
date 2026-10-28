@@ -1,6 +1,3 @@
-import json
-import math
-
 import ee
 
 from src.export_utils import (
@@ -40,33 +37,34 @@ def main() -> None:
         sources=sources
     )
     result = ee.Feature(sample.first()).toDictionary().getInfo()
-    histogram = json.loads(result["isa_value_counts"])
-    fractions = json.loads(result["isa_value_fractions"])
-    if not histogram:
-        raise ValueError("The test sample point returned an empty ISA histogram.")
-    expected_classes = {str(value) for value in sources.isa_class_values}
-    if set(histogram) != expected_classes:
+    isa_fractions = {
+        year: result.get(f"isa_urban_fraction_{year}")
+        for year in sources.isa_years
+    }
+    if any(fraction is None for fraction in isa_fractions.values()):
         raise ValueError(
-            "ISA histogram must include every configured class, including "
-            "classes with zero pixels."
+            "The test sample point is missing one or more annual ISA fractions."
         )
-    if result["isa_valid_pixel_count"] <= 0:
-        raise ValueError("The test sample point returned no valid ISA pixels.")
-    if not math.isclose(
-        sum(histogram.values()),
-        result["isa_valid_pixel_count"],
-        abs_tol=1e-6
+    if any(
+        not 0 <= fraction <= 1
+        for fraction in isa_fractions.values()
     ):
         raise ValueError(
-            "ISA class counts do not sum to isa_valid_pixel_count."
+            "An annual ISA urban fraction is outside the [0, 1] range."
         )
-    if set(histogram) != set(fractions):
-        raise ValueError(
-            "ISA count and fraction histograms have different class values."
+    fractions_by_year = [
+        isa_fractions[year]
+        for year in sources.isa_years
+    ]
+    if any(
+        earlier > later
+        for earlier, later in zip(
+            fractions_by_year,
+            fractions_by_year[1:]
         )
-    if not math.isclose(sum(fractions.values()), 1.0, abs_tol=1e-6):
+    ):
         raise ValueError(
-            "ISA class fractions do not sum to 1 for the test sample point."
+            "Annual ISA urban fractions must not decrease over time."
         )
 
     water_fraction = result.get("water_fraction")
@@ -90,8 +88,7 @@ def main() -> None:
 
     print(f"[PASS] City {city_id}; sample points available: {city_point_count}")
     print(f"[PASS] Sample pixel: {result.get('pixel_id')}")
-    print(f"[PASS] ISA class counts: {histogram}")
-    print(f"[PASS] ISA class fractions: {fractions}")
+    print(f"[PASS] ISA annual urban fractions: {isa_fractions}")
     print(f"[PASS] Water fraction: {water_fraction}")
     for year in ghsl_years:
         print(
