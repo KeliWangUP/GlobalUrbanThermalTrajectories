@@ -25,6 +25,11 @@
     "fraction_diagnostic_city_id": 5929
   },
 
+  "samplepoint_lst_export": {
+    "year": 2020,
+    "month": 1
+  },
+
   "reference_grid": {
     "collection": "MODIS/061/MOD11A1",
     "band": "LST_Day_1km",

@@ -139,3 +139,22 @@ monthly QC values. A single-city, single-point check is available via:
 ```bash
 python scripts/gee_modul/test_samplepoint_lst.py
 ```
+
+To test one month for one sample point, set
+`samplepoint_lst_export.year` and `.month` in `config.json` and run:
+
+```bash
+python scripts/gee_modul/test_samplepoint_lst_month.py
+```
+
+To submit a **full-sample, single-month** CSV task using those same
+configuration values, run:
+
+```bash
+python scripts/gee_modul/export_samplepoint_lst_month.py
+```
+
+This creates one task named
+`samplepoint_lst_monthly_<version>_<year>_<month>` and exports every point
+for that month. Alternatively, add `samplepoint_lst_month` to
+`export.targets` and run `run_export.py`. The default targets are unchanged.

@@ -7,13 +7,15 @@ from export_city_monthly_lst import export_city
 from export_rural_all_cities_annual import export_rural_all_cities
 from export_samplepoint_attributes import export_samplepoint_attributes
 from export_samplepoint_lst import export_samplepoint_lst
+from export_samplepoint_lst_month import export_samplepoint_lst_month
 
 
 EXPORTERS = {
     "city": export_city,
     "rural": export_rural_all_cities,
     "samplepoint_attributes": export_samplepoint_attributes,
-    "samplepoint_lst": export_samplepoint_lst
+    "samplepoint_lst": export_samplepoint_lst,
+    "samplepoint_lst_month": export_samplepoint_lst_month
 }
 
 
