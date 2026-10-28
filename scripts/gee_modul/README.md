@@ -61,3 +61,48 @@ Its configured basename is
 `export.ghsl_built_dataset_name` with the project version appended. Download
 the completed CSV locally when the Earth Engine task succeeds. This export
 does not modify the source GHSL assets or the existing SUHI/metadata Parquets.
+
+## MODIS sample-point ISA, GHSL and water attributes
+
+The sample-point composition workflow summarizes the existing MODIS grid
+points in `export.asset_root`. Each point is treated as the center of its
+native MODIS reference-grid pixel; the reduction region is the corresponding
+square cell built from the reference projection and nominal scale.
+
+To check one sample point from the city configured at `test.city_id`, run:
+
+```bash
+python scripts/gee_modul/test_samplepoint_attributes.py
+```
+
+The check evaluates one point in that city and validates the ISA histogram,
+its per-class fractions, the water fraction range, and availability of GHSL
+pixels. It does not submit an export task.
+
+To submit exports for all sample points, run:
+
+```bash
+python scripts/gee_modul/export_samplepoint_attributes.py
+```
+
+The workflow submits one Drive CSV task per `sample_points.city_batch_size`
+cities (currently 50), with one output row per sample point. It also supports
+the `samplepoint_attributes` target in `run_export.py`; add that target to
+`export.targets` only when intentionally submitting these tasks.
+
+`isa_value_counts` and `isa_value_fractions` are JSON strings with one key
+for every configured ISA class (currently `0` through `38`). A class with no
+pixels in a cell is included with count/fraction `0`. The band is selected
+from `samplepoint_attributes.isa_band`; when that field is `null`, the asset
+must contain exactly one band. Counts use unweighted native ISA pixels whose
+centers fall inside the MODIS cell; fractions are normalized pixel-count
+shares, not area-weighted fractions. This preserves the raw class histogram
+for later year-to-class mapping.
+
+For GHSL, the export contains the mean and valid 100 m pixel count for
+`built_surface` (m² per source pixel) and `built_volume_total` (m³ per source
+pixel) for every configured five-year interval. `water_fraction` is an
+area-weighted fraction from the same GLO30 `WBM` mask as the rural workflow:
+`WBM == 0` is non-water there, so water is `WBM != 0`. The CSV also includes
+water and valid WBM areas in m². Results use the configured Drive folder and
+dataset name; they do not modify the source point, ISA, GHSL, or DEM assets.

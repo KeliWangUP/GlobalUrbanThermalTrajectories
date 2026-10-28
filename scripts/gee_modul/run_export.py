@@ -5,11 +5,13 @@ from src.export_utils import (
 )
 from export_city_monthly_lst import export_city
 from export_rural_all_cities_annual import export_rural_all_cities
+from export_samplepoint_attributes import export_samplepoint_attributes
 
 
 EXPORTERS = {
     "city": export_city,
-    "rural": export_rural_all_cities
+    "rural": export_rural_all_cities,
+    "samplepoint_attributes": export_samplepoint_attributes
 }
 
 
