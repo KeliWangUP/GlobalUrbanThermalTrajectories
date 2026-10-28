@@ -144,6 +144,7 @@
       "samplepoint_attributes"
     ],
     "city_dataset_name": "city_lst_fixed2024",
+    "samplepoint_lst_dataset_name": "samplepoint_lst_monthly",
     "rural_priority_dataset_name": "rural_lst_over_300k",
     "rural_all_cities_dataset_name": "rural_lst_all_cities",
     "ghsl_built_dataset_name": "ghsl_built_city_development_2000_2020",

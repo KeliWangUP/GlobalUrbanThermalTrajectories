@@ -148,6 +148,16 @@ def build_export_selectors(
     ]
 
 
+def build_samplepoint_lst_selectors(
+    id_field: str
+) -> list[str]:
+    """Keep the city LST schema and add a stable sample-point key."""
+    return [
+        "pixel_id",
+        *build_export_selectors(id_field)
+    ]
+
+
 def build_spatial_reducer() -> ee.Reducer:
     """Build the shared spatial summary reducer."""
     return (
@@ -369,6 +379,89 @@ def build_yearly_lst_statistics(
             )
         )
         print(f"[BUILD] {year}-{month:02d}")
+
+    return ee.FeatureCollection(monthly_results).flatten()
+
+
+def build_yearly_samplepoint_lst_statistics(
+    year: int,
+    points: ee.FeatureCollection,
+    config: dict[str, Any],
+    projection: ee.Projection,
+    scale: float,
+    id_field: str
+) -> ee.FeatureCollection:
+    """Sample monthly MODIS LST/QC images at each reference-grid point."""
+    tile_scale = config["processing"]["tile_scale"]
+    sample_fields = ["pixel_id", id_field]
+    output_bands = LST_BANDS + QC_BANDS
+    no_data = -9999
+    monthly_results = []
+
+    sample_points = points.select(
+        propertySelectors=sample_fields,
+        retainGeometry=True
+    )
+
+    for month in range(1, 13):
+        monthly_image = build_monthly_four_slot_image(
+            year=year,
+            month=month,
+            config=config,
+            reference_projection=projection
+        )
+        sampled = (
+            monthly_image
+            .select(output_bands)
+            .unmask(no_data, sameFootprint=False)
+            .sampleRegions(
+                collection=sample_points,
+                properties=sample_fields,
+                projection=projection,
+                scale=scale,
+                tileScale=tile_scale,
+                geometries=False
+            )
+        )
+
+        def _format_feature(feature: ee.Feature) -> ee.Feature:
+            output: dict[str, Any] = {
+                "pixel_id": feature.get("pixel_id"),
+                id_field: feature.get(id_field),
+                "year": year,
+                "month": month
+            }
+            for band in LST_BANDS:
+                value = ee.Number(feature.get(band))
+                is_valid = value.neq(no_data)
+                valid_value = ee.Algorithms.If(
+                    is_valid,
+                    value,
+                    None
+                )
+                output[f"{band}_mean"] = valid_value
+                output[f"{band}_median"] = valid_value
+                output[f"{band}_stdDev"] = ee.Algorithms.If(
+                    is_valid,
+                    0,
+                    None
+                )
+                output[f"{band}_count"] = ee.Algorithms.If(
+                    is_valid,
+                    1,
+                    None
+                )
+            for band in QC_BANDS:
+                value = ee.Number(feature.get(band))
+                output[f"{band}_mean"] = ee.Algorithms.If(
+                    value.neq(no_data),
+                    value,
+                    None
+                )
+            return ee.Feature(None, ee.Dictionary(output))
+
+        monthly_results.append(sampled.map(_format_feature))
+        print(f"[BUILD] Sample-point LST {year}-{month:02d}")
 
     return ee.FeatureCollection(monthly_results).flatten()
 

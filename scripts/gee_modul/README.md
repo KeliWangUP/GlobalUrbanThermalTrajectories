@@ -112,3 +112,30 @@ area-weighted fraction from the same GLO30 `WBM` mask as the rural workflow:
 `WBM == 0` is non-water there, so water is `WBM != 0`. The CSV also includes
 water and valid WBM areas in m². Results use the configured Drive folder and
 dataset name; they do not modify the source point, ISA, GHSL, or DEM assets.
+
+## MODIS sample-point monthly LST
+
+The sample-point LST exporter uses the same monthly MODIS composites, QA
+settings, city-LST output fields, and CSV folder as the city exporter, but
+samples each monthly image at every point in `export.asset_root`. Run it
+directly:
+
+```bash
+python scripts/gee_modul/export_samplepoint_lst.py
+```
+
+Or add `samplepoint_lst` to `export.targets` and run `run_export.py`. The
+export submits one Drive CSV task per study year and includes all sample
+points. The output has the city-LST columns plus `pixel_id`, which identifies
+each sampled MODIS cell and allows joining these records to the other
+sample-point exports.
+
+Each record represents one sample point and one calendar month. Because the
+spatial unit is a single MODIS pixel, each available LST value is repeated in
+the `mean` and `median` columns, `stdDev` is 0, and `count` is 1. Missing
+observations remain null. QC `_mean` fields contain the sampled pixel's
+monthly QC values. A single-city, single-point check is available via:
+
+```bash
+python scripts/gee_modul/test_samplepoint_lst.py
+```
