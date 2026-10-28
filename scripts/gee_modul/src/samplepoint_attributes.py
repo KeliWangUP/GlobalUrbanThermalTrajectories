@@ -204,12 +204,13 @@ def _build_cell_regions(
         raise ValueError(
             "samplepoint_attributes.geometry_error_m must be positive."
         )
+    max_error_margin = ee.ErrorMargin(max_error, "projected")
 
     def _to_cell(feature: ee.Feature) -> ee.Feature:
         geometry = (
             feature.geometry()
-            .buffer(scale / 2, maxError=max_error, proj=projection)
-            .bounds(maxError=max_error, proj=projection)
+            .buffer(scale / 2, maxError=max_error_margin, proj=projection)
+            .bounds(maxError=max_error_margin, proj=projection)
         )
         return ee.Feature(
             geometry,
