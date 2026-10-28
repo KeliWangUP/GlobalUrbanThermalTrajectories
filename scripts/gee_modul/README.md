@@ -88,8 +88,9 @@ python scripts/gee_modul/export_samplepoint_attributes.py
 
 The workflow submits one Drive CSV task per `sample_points.city_batch_size`
 cities (currently 50), with one output row per sample point. It also supports
-the `samplepoint_attributes` target in `run_export.py`; add that target to
-`export.targets` only when intentionally submitting these tasks.
+the `samplepoint_attributes` target in `run_export.py`. It is currently the
+only enabled `export.targets` entry, so running `run_export.py` submits the
+full sample-point export without starting city or rural exports.
 
 For each configured year from 1985 through 2021, the export contains
 `isa_urban_fraction_YEAR`. ISA values `0` and `2`-`38` are treated as valid;
