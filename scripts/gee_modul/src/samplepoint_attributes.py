@@ -227,12 +227,13 @@ def _encode_histogram(
 ) -> ee.String:
     format_string = f"%.{decimal_places}f"
 
-    def _encode_value(class_value: ee.Number) -> ee.String:
-        count = _histogram_count(histogram, class_value)
+    def _encode_value(class_value: ee.ComputedObject) -> ee.String:
+        class_number = ee.Number(class_value)
+        count = _histogram_count(histogram, class_number)
         value = count.divide(divisor)
         return (
             ee.String('"')
-            .cat(class_value.format("%d"))
+            .cat(class_number.format("%d"))
             .cat('":')
             .cat(value.format(format_string))
         )
