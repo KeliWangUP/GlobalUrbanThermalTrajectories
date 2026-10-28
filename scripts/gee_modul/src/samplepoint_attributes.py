@@ -402,9 +402,14 @@ def build_samplepoint_attribute_collection(
         })
 
         water_feature = ee.Feature(feature.get("_water_stats"))
-        water_area = ee.Number(water_feature.get("water_area_m2", 0))
+        water_stats_dictionary = ee.Dictionary(
+            water_feature.toDictionary()
+        )
+        water_area = ee.Number(
+            water_stats_dictionary.get("water_area_m2", 0)
+        )
         water_valid_area = ee.Number(
-            water_feature.get("water_valid_area_m2", 0)
+            water_stats_dictionary.get("water_valid_area_m2", 0)
         )
         water_fraction = ee.Algorithms.If(
             water_valid_area.gt(0),
