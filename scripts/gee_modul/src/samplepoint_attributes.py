@@ -213,15 +213,23 @@ def _build_cell_regions(
         center_x = ee.Number(coordinates.get(0))
         center_y = ee.Number(coordinates.get(1))
         half_scale = ee.Number(scale).divide(2)
-        geometry = ee.Geometry.Rectangle(
+        west = center_x.subtract(half_scale)
+        east = center_x.add(half_scale)
+        south = center_y.subtract(half_scale)
+        north = center_y.add(half_scale)
+        geometry = ee.Geometry.Polygon(
             [
-                center_x.subtract(half_scale),
-                center_y.subtract(half_scale),
-                center_x.add(half_scale),
-                center_y.add(half_scale)
+                [
+                    [west, south],
+                    [east, south],
+                    [east, north],
+                    [west, north],
+                    [west, south]
+                ]
             ],
             proj=projection,
-            geodesic=False
+            geodesic=False,
+            maxError=max_error_margin
         )
         return ee.Feature(
             geometry,
