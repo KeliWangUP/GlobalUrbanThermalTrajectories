@@ -77,11 +77,7 @@ def export_samplepoint_attributes(
         f"[INFO] Sample-point asset: {point_asset}; "
         f"{point_count} points across {len(city_ids)} cities."
     )
-    print(
-        f"[INFO] ISA band: {sources.isa_band}; native scale: "
-        f"{sources.isa_scale:.2f} m; water scale: "
-        f"{sources.water_scale:.2f} m."
-    )
+    print(f"[INFO] ISA band: {sources.isa_band}.")
 
     dataset_name = export_config["samplepoint_attributes_dataset_name"]
     version = config["project"]["version"]

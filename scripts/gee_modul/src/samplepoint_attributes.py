@@ -7,17 +7,10 @@ import ee
 @dataclass(frozen=True)
 class SamplePointSources:
     isa_image: ee.Image
-    isa_projection: ee.Projection
-    isa_scale: float
     isa_band: str
     isa_years: tuple[int, ...]
     ghsl_image: ee.Image
-    ghsl_projection: ee.Projection
-    ghsl_fields: list[str]
-    ghsl_scale: float
     water_image: ee.Image
-    water_projection: ee.Projection
-    water_scale: float
 
 
 def build_samplepoint_selectors(
@@ -76,7 +69,7 @@ def _resolve_isa_band(
 def prepare_samplepoint_sources(
     config: dict[str, Any]
 ) -> SamplePointSources:
-    """Load raster sources and resolve their native projections once."""
+    """Load the selected ISA, GHSL and water raster sources."""
     attribute_config = config["samplepoint_attributes"]
     isa_asset = attribute_config["isa_asset"]
     if not isinstance(isa_asset, str) or not isa_asset.strip():
@@ -100,8 +93,6 @@ def prepare_samplepoint_sources(
         attribute_config.get("isa_band")
     )
     isa_image = isa_image.select(isa_band)
-    isa_projection = isa_image.projection()
-    isa_scale = isa_projection.nominalScale().getInfo()
 
     ghsl_config = config["ghsl_built"]
     years = ghsl_config["years"]
@@ -116,7 +107,6 @@ def prepare_samplepoint_sources(
         )
 
     ghsl_bands = []
-    ghsl_fields = []
     for year in years:
         surface_field = f"built_surface_{year}_m2"
         volume_field = f"built_volume_{year}_m3"
@@ -132,21 +122,7 @@ def prepare_samplepoint_sources(
                 ghsl_config["built_volume_band"]
             ).rename(volume_field)
         ])
-        ghsl_fields.extend([
-            f"{surface_field}_mean",
-            f"{surface_field}_count",
-            f"{volume_field}_mean",
-            f"{volume_field}_count"
-        ])
     ghsl_image = ee.Image.cat(ghsl_bands)
-    ghsl_projection = ghsl_image.select(0).projection()
-    ghsl_scale = ghsl_config["scale_m"]
-    if (
-        isinstance(ghsl_scale, bool)
-        or not isinstance(ghsl_scale, (int, float))
-        or ghsl_scale <= 0
-    ):
-        raise ValueError("ghsl_built.scale_m must be a positive number.")
 
     rural_config = config["rural"]
     water_band = attribute_config["water_band"]
@@ -164,79 +140,47 @@ def prepare_samplepoint_sources(
         .neq(0)
         .rename("water")
     )
-    water_projection = water_image.projection()
-    water_scale = water_projection.nominalScale().getInfo()
-
     return SamplePointSources(
         isa_image=isa_image,
-        isa_projection=isa_projection,
-        isa_scale=isa_scale,
         isa_band=isa_band,
         isa_years=tuple(isa_years),
         ghsl_image=ghsl_image,
-        ghsl_projection=ghsl_projection,
-        ghsl_fields=ghsl_fields,
-        ghsl_scale=ghsl_scale,
-        water_image=water_image,
-        water_projection=water_projection,
-        water_scale=water_scale
+        water_image=water_image
     )
 
 
-def _build_cell_regions(
+def _sample_modis_grid_image(
+    image: ee.Image,
+    reducer: ee.Reducer,
     points: ee.FeatureCollection,
-    config: dict[str, Any],
+    properties: list[str],
     projection: ee.Projection,
-    scale: float
+    scale: float,
+    max_pixels: int,
+    tile_scale: int,
+    fill_value: int | float
 ) -> ee.FeatureCollection:
-    base_field_count = (
-        6 if config["sample_points"]["include_lonlat"] else 4
+    """Aggregate a raster to MODIS pixels, then sample at their centers."""
+    modis_image = (
+        image
+        .reduceResolution(
+            reducer=reducer,
+            maxPixels=max_pixels
+        )
+        .reproject(
+            crs=projection,
+            scale=scale
+        )
+        .unmask(fill_value, sameFootprint=False)
     )
-    base_fields = build_samplepoint_selectors(config)[:base_field_count]
-    max_error = config["samplepoint_attributes"]["geometry_error_m"]
-    if (
-        isinstance(max_error, bool)
-        or not isinstance(max_error, (int, float))
-        or max_error <= 0
-    ):
-        raise ValueError(
-            "samplepoint_attributes.geometry_error_m must be positive."
-        )
-    max_error_margin = ee.ErrorMargin(max_error, "meters")
-
-    def _to_cell(feature: ee.Feature) -> ee.Feature:
-        coordinates = ee.List(
-            feature.geometry()
-            .transform(projection, maxError=max_error_margin)
-            .coordinates()
-        )
-        center_x = ee.Number(coordinates.get(0))
-        center_y = ee.Number(coordinates.get(1))
-        half_scale = ee.Number(scale).divide(2)
-        west = center_x.subtract(half_scale)
-        east = center_x.add(half_scale)
-        south = center_y.subtract(half_scale)
-        north = center_y.add(half_scale)
-        geometry = ee.Geometry.Polygon(
-            [
-                [
-                    [west, south],
-                    [east, south],
-                    [east, north],
-                    [west, north],
-                    [west, south]
-                ]
-            ],
-            proj=projection,
-            geodesic=False,
-            maxError=max_error_margin
-        )
-        return ee.Feature(
-            geometry,
-            feature.toDictionary(base_fields)
-        )
-
-    return points.map(_to_cell)
+    return modis_image.sampleRegions(
+        collection=points,
+        properties=properties,
+        projection=projection,
+        scale=scale,
+        tileScale=tile_scale,
+        geometries=False
+    )
 
 
 def _join_by_point_and_city(
@@ -284,12 +228,12 @@ def build_samplepoint_attribute_collection(
             "positive integer."
         )
 
-    cells = _build_cell_regions(
-        points=points,
-        config=config,
-        projection=projection,
-        scale=modis_scale
-    )
+    base_field_count = 6 if config["sample_points"]["include_lonlat"] else 4
+    base_fields = build_samplepoint_selectors(config)[:base_field_count]
+    isa_fields = [
+        f"isa_urban_fraction_{year}"
+        for year in sources.isa_years
+    ]
     isa_valid = (
         sources.isa_image.eq(0)
         .Or(
@@ -304,33 +248,40 @@ def build_samplepoint_attribute_collection(
         for year in sources.isa_years
     ]
     isa_fraction_image = ee.Image.cat(isa_fraction_bands)
-    isa_fields = [
-        f"isa_urban_fraction_{year}"
-        for year in sources.isa_years
-    ]
-    isa_stats = isa_fraction_image.reduceRegions(
-        collection=cells,
+    isa_stats = _sample_modis_grid_image(
+        image=isa_fraction_image,
         reducer=ee.Reducer.mean().unweighted(),
-        crs=sources.isa_projection,
-        scale=sources.isa_scale,
-        tileScale=tile_scale,
-        maxPixelsPerRegion=max_pixels
+        points=points,
+        properties=base_fields,
+        projection=projection,
+        scale=modis_scale,
+        max_pixels=max_pixels,
+        tile_scale=tile_scale,
+        fill_value=-1
     )
 
-    pixel_area = ee.Image.pixelArea()
+    pixel_area = ee.Image.pixelArea().reproject(
+        crs=sources.water_image.projection()
+    )
     water_area_image = ee.Image.cat([
-        pixel_area.updateMask(sources.water_image).rename("water_area_m2"),
+        pixel_area.updateMask(sources.water_image)
+        .unmask(0)
+        .rename("water_area_m2"),
         pixel_area.updateMask(
             sources.water_image.mask()
-        ).rename("water_valid_area_m2")
+        ).unmask(0)
+        .rename("water_valid_area_m2")
     ])
-    water_stats = water_area_image.reduceRegions(
-        collection=cells,
+    water_stats = _sample_modis_grid_image(
+        image=water_area_image,
         reducer=ee.Reducer.sum(),
-        crs=sources.water_projection,
-        scale=sources.water_scale,
-        tileScale=tile_scale,
-        maxPixelsPerRegion=max_pixels
+        points=points,
+        properties=base_fields,
+        projection=projection,
+        scale=modis_scale,
+        max_pixels=max_pixels,
+        tile_scale=tile_scale,
+        fill_value=0
     )
     ghsl_reducer = (
         ee.Reducer.mean()
@@ -339,13 +290,16 @@ def build_samplepoint_attribute_collection(
             sharedInputs=True
         )
     )
-    ghsl_stats = sources.ghsl_image.reduceRegions(
-        collection=cells,
+    ghsl_stats = _sample_modis_grid_image(
+        image=sources.ghsl_image,
         reducer=ghsl_reducer,
-        crs=sources.ghsl_projection,
-        scale=sources.ghsl_scale,
-        tileScale=tile_scale,
-        maxPixelsPerRegion=max_pixels
+        points=points,
+        properties=base_fields,
+        projection=projection,
+        scale=modis_scale,
+        max_pixels=max_pixels,
+        tile_scale=tile_scale,
+        fill_value=-1
     )
 
     isa_water = _join_by_point_and_city(
@@ -360,11 +314,17 @@ def build_samplepoint_attribute_collection(
         id_field=id_field,
         match_property="_ghsl_stats"
     )
-    selectors = build_samplepoint_selectors(config)
-    base_field_count = 6 if config["sample_points"]["include_lonlat"] else 4
-    base_fields = selectors[:base_field_count]
 
     def _format_feature(feature: ee.Feature) -> ee.Feature:
+        isa_properties = ee.Dictionary({
+            field: ee.Algorithms.If(
+                ee.Number(feature.get(field)).gte(0),
+                feature.get(field),
+                None
+            )
+            for field in isa_fields
+        })
+
         water_feature = ee.Feature(feature.get("_water_stats"))
         water_stats_dictionary = ee.Dictionary(
             water_feature.toDictionary()
@@ -386,17 +346,33 @@ def build_samplepoint_attribute_collection(
             "water_fraction": water_fraction
         })
         ghsl_feature = ee.Feature(feature.get("_ghsl_stats"))
+        ghsl_properties: dict[str, Any] = {}
+        for year in config["ghsl_built"]["years"]:
+            for measure in ("surface", "volume"):
+                name = (
+                    f"built_{measure}_{year}_m2"
+                    if measure == "surface"
+                    else f"built_{measure}_{year}_m3"
+                )
+                mean_field = f"{name}_mean"
+                count_field = f"{name}_count"
+                count = ee.Number(ghsl_feature.get(count_field))
+                has_pixels = count.gt(0)
+                ghsl_properties[mean_field] = ee.Algorithms.If(
+                    has_pixels,
+                    ghsl_feature.get(mean_field),
+                    None
+                )
+                ghsl_properties[count_field] = ee.Algorithms.If(
+                    has_pixels,
+                    count,
+                    0
+                )
         properties = (
             ee.Dictionary(feature.toDictionary(base_fields))
-            .combine(
-                ee.Dictionary(feature.toDictionary(isa_fields)),
-                overwrite=True
-            )
+            .combine(isa_properties, overwrite=True)
             .combine(water_properties, overwrite=True)
-            .combine(
-                ee.Dictionary(ghsl_feature.toDictionary(sources.ghsl_fields)),
-                overwrite=True
-            )
+            .combine(ee.Dictionary(ghsl_properties), overwrite=True)
         )
         return ee.Feature(None, properties)
 

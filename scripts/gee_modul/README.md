@@ -65,9 +65,10 @@ does not modify the source GHSL assets or the existing SUHI/metadata Parquets.
 ## MODIS sample-point ISA, GHSL and water attributes
 
 The sample-point composition workflow summarizes the existing MODIS grid
-points in `export.asset_root`. Each point is treated as the center of its
-native MODIS reference-grid pixel; the reduction region is the corresponding
-square cell built from the reference projection and nominal scale.
+points in `export.asset_root`. Each raster is aggregated to the MODIS
+reference grid with `reduceResolution`, then sampled at the existing MODIS
+pixel-center points. This avoids constructing per-point vector polygons while
+keeping each output value associated with the same 1 km MODIS cell.
 
 To check one sample point from the city configured at `test.city_id`, run:
 

@@ -59,8 +59,7 @@
       2015, 2016, 2017, 2018, 2019, 2020, 2021
     ],
     "water_band": "WBM",
-    "geometry_error_m": 1,
-    "max_pixels_per_cell": 100000
+    "max_pixels_per_cell": 4096
   },
 
   "batches": {
