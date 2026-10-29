@@ -19,9 +19,11 @@ from src.samplepoint_attributes import (
 def export_samplepoint_attributes(
     config: dict[str, Any],
     projection: ee.Projection,
-    scale: float
+    scale: float,
+    selected_batch_index: int | None = None,
+    expected_batch_count: int | None = None
 ) -> list[ee.batch.Task]:
-    """Submit point-composition exports in batches of cities."""
+    """Submit point-composition exports, optionally for one city batch."""
     export_config = config["export"]
     point_asset = export_config["asset_root"]
     if not asset_exists(point_asset):
@@ -86,10 +88,39 @@ def export_samplepoint_attributes(
     batch_count = (
         len(city_ids) + city_batch_size - 1
     ) // city_batch_size
-    for batch_index, start in enumerate(
-        range(0, len(city_ids), city_batch_size),
-        start=1
+    if (
+        expected_batch_count is not None
+        and (
+            type(expected_batch_count) is not int
+            or expected_batch_count != batch_count
+        )
     ):
+        raise ValueError(
+            "The failed task's batch count does not match the current "
+            f"sample-point asset/config ({expected_batch_count} vs "
+            f"{batch_count}). Refusing to retry a potentially different "
+            "set of cities."
+        )
+    if (
+        selected_batch_index is not None
+        and (
+            type(selected_batch_index) is not int
+            or not 1 <= selected_batch_index <= batch_count
+        )
+    ):
+        raise ValueError(
+            "selected_batch_index must be within the configured batch range "
+            f"1-{batch_count}."
+        )
+
+    batch_numbers = range(1, batch_count + 1)
+    if selected_batch_index is not None:
+        batch_numbers = range(
+            selected_batch_index,
+            selected_batch_index + 1
+        )
+    for batch_index in batch_numbers:
+        start = (batch_index - 1) * city_batch_size
         batch_city_ids = city_ids[start:start + city_batch_size]
         batch_points = points.filter(
             ee.Filter.inList(id_field, batch_city_ids)
@@ -103,9 +134,11 @@ def export_samplepoint_attributes(
         )
         suffix = f"city_batch_{batch_index:04d}_of_{batch_count:04d}"
         export_name = f"{dataset_name}_{version}_{suffix}"
+        if selected_batch_index is not None:
+            export_name = f"{export_name}_retry"
         print(
             f"[INFO] Submitting batch {batch_index}/{batch_count}: "
-            f"{len(batch_city_ids)} cities."
+            f"{len(batch_city_ids)} cities; IDs={batch_city_ids}"
         )
         tasks.append(export_table_to_drive(
             collection=collection,

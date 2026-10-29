@@ -167,10 +167,6 @@ def _sample_modis_grid_image(
             reducer=reducer,
             maxPixels=max_pixels
         )
-        .reproject(
-            crs=projection,
-            scale=scale
-        )
         .unmask(fill_value, sameFootprint=False)
     )
     return modis_image.sampleRegions(
@@ -260,8 +256,8 @@ def build_samplepoint_attribute_collection(
         fill_value=-1
     )
 
-    pixel_area = ee.Image.pixelArea().reproject(
-        crs=sources.water_image.projection()
+    pixel_area = ee.Image.pixelArea().setDefaultProjection(
+        sources.water_image.projection()
     )
     water_area_image = ee.Image.cat([
         pixel_area.updateMask(sources.water_image)

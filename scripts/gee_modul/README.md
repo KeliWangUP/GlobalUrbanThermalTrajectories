@@ -86,6 +86,17 @@ To submit exports for all sample points, run:
 python scripts/gee_modul/export_samplepoint_attributes.py
 ```
 
+To retry only the city batch named in `failed.json`, run:
+
+```bash
+python scripts/gee_modul/export_samplepoint_attributes_failed_batch.py
+```
+
+The retry script checks that the current sample-point asset and batch size
+still produce the same total batch count before submitting anything. It
+exports only the selected batch and appends `_retry` to the Drive task/file
+name so the retry does not collide with the original output.
+
 The workflow submits one Drive CSV task per `sample_points.city_batch_size`
 cities (currently 50), with one output row per sample point. It also supports
 the `samplepoint_attributes` target in `run_export.py`. It is currently the
