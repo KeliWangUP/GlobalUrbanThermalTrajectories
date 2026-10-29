@@ -1,12 +1,13 @@
+import sys
+from pathlib import Path
 from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import ee
 
-from export_samplepoint_attributes import export_samplepoint_attributes
-from export_samplepoint_attributes_failed_batch import (
-    FAILED_BATCH_FILE,
-    read_failed_batch
-)
+from src.samplepoint_attribute_exports import export_samplepoint_attributes
+from src.samplepoint_recovery import FAILED_BATCH_FILE, read_failed_batch
 from src.export_utils import (
     get_modis_reference_grid,
     initialize_gee,

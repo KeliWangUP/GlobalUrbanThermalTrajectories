@@ -17,7 +17,7 @@
 
   "failed_samplepoint_retry": {
     "city_offset": 0,
-    "max_cities_per_run": 10
+    "max_cities_per_run": 2750
   },
 
   "processing": {
@@ -33,6 +33,15 @@
   "samplepoint_lst_export": {
     "year": 2020,
     "month": 1
+  },
+
+  "samplepoint_lst_spatial_export": {
+    "tile_pixels": 640,
+    "selection": "test_city",
+    "tile_column": null,
+    "tile_row": null,
+    "tile_offset": 0,
+    "max_tiles_per_run": 1
   },
 
   "reference_grid": {

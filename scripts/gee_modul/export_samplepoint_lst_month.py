@@ -3,7 +3,6 @@ from typing import Any
 import ee
 
 from src.export_utils import (
-    asset_exists,
     build_monthly_samplepoint_lst_statistics,
     build_samplepoint_lst_selectors,
     export_table_to_drive,
@@ -11,6 +10,7 @@ from src.export_utils import (
     initialize_gee,
     load_config
 )
+from src.samplepoint_utils import load_sample_points
 
 
 def export_samplepoint_lst_month(
@@ -20,30 +20,8 @@ def export_samplepoint_lst_month(
 ) -> ee.batch.Task:
     """Submit one full-sample monthly MODIS LST CSV task."""
     export_config = config["export"]
-    point_asset = export_config["asset_root"]
-    if not asset_exists(point_asset):
-        raise FileNotFoundError(
-            f"Sample-point asset not found: {point_asset}. "
-            "Build or upload the MODIS sample-point asset first."
-        )
-
-    points = ee.FeatureCollection(point_asset)
-    point_count = points.size().getInfo()
-    if point_count == 0:
-        raise ValueError(f"Sample-point asset is empty: {point_asset}")
-
     id_field = config["cities"]["id_field"]
-    required_fields = ["pixel_id", id_field]
-    available_fields = ee.Feature(points.first()).propertyNames().getInfo()
-    missing_fields = [
-        field for field in required_fields
-        if field not in available_fields
-    ]
-    if missing_fields:
-        raise ValueError(
-            "Sample-point asset is missing required properties: "
-            f"{missing_fields}"
-        )
+    points, point_count = load_sample_points(config, ["pixel_id", id_field])
 
     month_config = config["samplepoint_lst_export"]
     year = month_config["year"]

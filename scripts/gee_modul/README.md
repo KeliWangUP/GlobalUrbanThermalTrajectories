@@ -3,6 +3,17 @@
 The complete source-to-analysis workflow is documented in
 [`../../DATA_PROCESSING_WORKFLOW.md`](../../DATA_PROCESSING_WORKFLOW.md).
 
+The root scripts are operational entry points, `src/` contains reusable
+processing and export helpers, and `archive/` holds superseded
+troubleshooting scripts. Existing `test_*.py` scripts are live Earth Engine
+checks, not offline unit tests; they are retained as operational diagnostics.
+Offline regression checks for the sample-point exports can be run from the
+repository root with:
+
+```bash
+python -m unittest discover -s scripts/gee_modul/tests -p "test_samplepoint*.py"
+```
+
 To create one annual CSV containing all cities with a non-empty rural halo,
 run from this directory:
 
@@ -86,11 +97,12 @@ To submit exports for all sample points, run:
 python scripts/gee_modul/export_samplepoint_attributes.py
 ```
 
-The single-batch retry helper accepts either a legacy `batch` string or a
-one-entry `batches` list in `failed.json`:
+Earlier troubleshooting scripts are kept under `archive/` and remain
+executable from the repository root. The single-batch retry helper accepts
+either a legacy `batch` string or a one-entry `batches` list in `failed.json`:
 
 ```bash
-python scripts/gee_modul/export_samplepoint_attributes_failed_batch.py
+python scripts/gee_modul/archive/export_samplepoint_attributes_failed_batch.py
 ```
 
 The retry script checks that the current sample-point asset and batch size
@@ -103,7 +115,7 @@ To diagnose a persistent reprojection failure before retrying a complete
 batch, run:
 
 ```bash
-python scripts/gee_modul/export_samplepoint_attributes_failed_city_probe.py
+python scripts/gee_modul/archive/export_samplepoint_attributes_failed_city_probe.py
 ```
 
 This requires exactly one failed batch in `failed.json`, selects the city
@@ -121,14 +133,20 @@ The script validates that every failed task has the same total batch count as
 the current sample-point asset, then creates one Drive CSV task per city in
 the selected wave. The wave is controlled by
 `failed_samplepoint_retry.city_offset` and
-`failed_samplepoint_retry.max_cities_per_run` in `config.json` (defaults:
-first 10 failed cities). Each task name includes the city ID and `_retry`;
-the script prints the Earth Engine task ID next to each city ID and appends
+`failed_samplepoint_retry.max_cities_per_run` in `config.json`. If the limit
+is at least the number of failed cities, one run submits all of them; the
+current configuration selects up to 2,750 cities from offset 0. Each task
+name includes the city ID and `_retry`; the script prints the Earth Engine
+task ID next to each city ID and appends
 the submission time, city ID, and task ID to
 `failed_city_retry_task_log.jsonl`. After a wave, increase `city_offset` by
-the number of submitted cities before starting the next wave. Keep the 177
+the number of submitted cities before starting the next wave. Keep all
 successful batch exports; this script maps only the batch names listed in
-`failed.json`.
+`failed.json`. Matching the total batch count alone cannot prove that the
+asset's sorted city IDs or original batch size are unchanged: verify both
+before submitting. If submission stops partway through, check the task log
+and Earth Engine task list before resuming; rerunning the same offset can
+create duplicate tasks.
 
 The workflow submits one Drive CSV task per `sample_points.city_batch_size`
 cities (currently 50), with one output row per sample point. It also supports
@@ -161,8 +179,50 @@ dataset name; they do not modify the source point, ISA, GHSL, or DEM assets.
 
 The sample-point LST exporter uses the same monthly MODIS composites, QA
 settings, city-LST output fields, and CSV folder as the city exporter, but
-samples each monthly image at every point in `export.asset_root`. Run it
-directly:
+samples each monthly image at every point in `export.asset_root`.
+
+The global annual and global single-month exports described below have failed
+at full sample size. To test a spatially partitioned export, run:
+
+```bash
+python scripts/gee_modul/export_samplepoint_lst_spatial.py
+```
+
+In `samplepoint_lst_spatial_export` in `config.json`, the initial tile side
+length is 640 native MODIS pixels (about 593 km in the MODIS projected grid
+at the reference scale).
+`selection: "test_city"` submits exactly one task for the tile containing
+the first `pixel_id` in `test.city_id`. The tile includes **all** sample
+points in that spatial block, not just points belonging to the test city.
+Each task covers every month from `study.start_year` to `study.end_year`,
+inclusive; the current study configuration is 2020 only. The script prints
+the tile indices, point count, expected row count, task ID, and name.
+
+The tile indices are `floor(modis_x / tile_pixels)` and
+`floor(modis_y / tile_pixels)`, including for negative coordinates. Each
+sample point belongs to one half-open coordinate block. Only occupied tiles
+are submitted, and the CSV fields, LST/QC computation and missing-value
+handling are shared with the existing monthly exporter. A task may still
+exceed Earth Engine's limits because of point density or time span; the tile
+size is a starting hypothesis, not a proven capacity.
+
+To select one known tile, set `selection` to `"tile"` and set integer
+`tile_column` and `tile_row`. To process all occupied tiles, set `selection`
+to `"all"`; `tile_offset` and `max_tiles_per_run` control which sorted tiles
+are submitted. The configured maximum is initially 1. Keep the point asset,
+tile size, and study period unchanged between waves, or offsets and output
+names may refer to different work.
+
+Submitted tasks are appended to `samplepoint_lst_spatial_task_log.jsonl` with
+their tile, point count, time range and task ID. This is a submission log, not
+an automatic completion tracker. If submission stops or a task fails, check
+the log and Earth Engine task status before submitting again; rerunning the
+same tile can create duplicates. Changing tile size or time range to retry
+failed work changes its coverage: retain a manifest and merge only successful,
+non-overlapping outputs, checking `(pixel_id, city ID, year, month)` keys.
+Matching output row counts should be checked against the printed expectation.
+
+The previous unpartitioned annual exporter remains available:
 
 ```bash
 python scripts/gee_modul/export_samplepoint_lst.py

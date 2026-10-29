@@ -3,15 +3,10 @@ import re
 from pathlib import Path
 from typing import Any
 
-from export_samplepoint_attributes import export_samplepoint_attributes
-from src.export_utils import (
-    get_modis_reference_grid,
-    initialize_gee,
-    load_config
-)
+import ee
 
 
-FAILED_BATCH_FILE = Path(__file__).with_name("failed.json")
+FAILED_BATCH_FILE = Path(__file__).resolve().parents[1] / "failed.json"
 BATCH_PATTERN = re.compile(r"_city_batch_(\d+)_of_(\d+)$")
 
 
@@ -79,36 +74,47 @@ def read_failed_batch(path: Path) -> tuple[int, int, str]:
     return parsed_batches[0]
 
 
-def main() -> None:
-    config = load_config()
-    initialize_gee(config)
-    failed_batch_index, expected_batch_count, batch_name = (
-        read_failed_batch(FAILED_BATCH_FILE)
-    )
-    configured_batch_size = config["sample_points"]["city_batch_size"]
-    if type(configured_batch_size) is not int or configured_batch_size < 1:
+def get_failed_city_ids(
+    config: dict[str, Any],
+    failed_batches: list[tuple[int, int, str]]
+) -> list[Any]:
+    point_asset = config["export"]["asset_root"]
+    id_field = config["cities"]["id_field"]
+    points = ee.FeatureCollection(point_asset)
+    city_ids = points.aggregate_array(id_field).distinct().sort().getInfo()
+    if not city_ids or any(city_id is None for city_id in city_ids):
+        raise ValueError("Sample-point asset has no valid city IDs.")
+
+    batch_size = config["sample_points"]["city_batch_size"]
+    if type(batch_size) is not int or batch_size < 1:
         raise ValueError(
             "sample_points.city_batch_size must be a positive integer."
         )
-
-    projection, scale = get_modis_reference_grid(config)
-    tasks = export_samplepoint_attributes(
-        config=config,
-        projection=projection,
-        scale=scale,
-        selected_batch_index=failed_batch_index,
-        expected_batch_count=expected_batch_count
-    )
-    if len(tasks) != 1:
-        raise RuntimeError(
-            f"Expected one retry task for '{batch_name}', got {len(tasks)}."
+    batch_count = (len(city_ids) + batch_size - 1) // batch_size
+    expected_counts = {total for _, total, _ in failed_batches}
+    if expected_counts != {batch_count}:
+        raise ValueError(
+            "Failed task batch count does not match the current "
+            f"sample-point asset/config: {expected_counts} vs {batch_count}. "
+            "Refusing to map indices to a potentially different city list."
         )
-    print(
-        f"[INFO] Retried only batch {failed_batch_index:04d} of "
-        f"{expected_batch_count:04d}. Verify that the current task description "
-        "has the same total batch count before using its output."
-    )
 
+    failed_city_ids = set()
+    for batch_index, _, batch_name in failed_batches:
+        start = (batch_index - 1) * batch_size
+        batch_city_ids = city_ids[start:start + batch_size]
+        if not batch_city_ids:
+            raise ValueError(
+                f"No city IDs found for failed batch '{batch_name}'."
+            )
+        failed_city_ids.update(batch_city_ids)
 
-if __name__ == "__main__":
-    main()
+    if len(failed_city_ids) != sum(
+        min(batch_size, len(city_ids) - (batch_index - 1) * batch_size)
+        for batch_index, _, _ in failed_batches
+    ):
+        raise ValueError(
+            "Failed batches map to overlapping city IDs; refusing to "
+            "submit duplicate city exports."
+        )
+    return [city_id for city_id in city_ids if city_id in failed_city_ids]

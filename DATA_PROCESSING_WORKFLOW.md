@@ -12,7 +12,8 @@
 
 ## 1. 研究数据与核心对象
 
-研究期由 GEE 配置控制，当前为 2000–2024 年。城市边界使用
+研究期由 GEE 配置控制；2000–2024 年为分析目标，当前测试配置为 2020 年。
+城市边界使用
 `ID_UC_G0` 标识，并固定采用 2024 年边界。热红外数据来自 MODIS 8 日合成：
 
 - Terra：`MODIS/061/MOD11A2`
@@ -136,7 +137,9 @@ python scripts/gee_modul/build_rural_city_fraction_assets.py
 python scripts/gee_modul/run_export.py
 ```
 
-`run_export.py` 的目标由 `export.targets` 控制。当前配置是 `["rural"]`；
+`run_export.py` 的目标由 `export.targets` 控制。当前配置是
+`["samplepoint_attributes"]`，会提交样点属性批次；若要导出全量乡村温度，
+将目标改为 `["rural"]`；
 需要重新导出城市温度时将目标改为 `["city"]`。全量乡村年度导出也可直接运行：
 
 ```bash
@@ -146,6 +149,19 @@ python scripts/gee_modul/export_rural_all_cities_annual.py
 导出任务提交成功不等于任务完成。等待 Earth Engine 任务成功后，再从 Drive
 下载年度 CSV。全量乡村文件放入 `data/raw/rural_all`；不要与旧优先
 城市文件 `data/raw/rural` 混放，否则会造成同一年有多个输入文件。
+
+### 3.4 样点 LST 空间分区试验
+
+全球样点按年或按月整体导出均已失败；现提供按 MODIS 网格坐标分区的
+试验入口
+[`export_samplepoint_lst_spatial.py`](./scripts/gee_modul/export_samplepoint_lst_spatial.py)。
+默认网格边长为 640 像元，仅提交一个包含测试城市某个样点的网格；
+该网格中属于其他城市的样点也会被导出。一个任务覆盖配置的整个研究期，
+当前测试配置为 2020 年。月合成、质量字段和输出表头沿用既有样点 LST
+逻辑。网格大小只是试验起点，成功后仍需对样点密集区和更长时间范围验证。
+
+分区设置、全量提交方式及任务日志见
+[`scripts/gee_modul/README.md`](./scripts/gee_modul/README.md)。
 
 ## 4. 本地数据层级
 
