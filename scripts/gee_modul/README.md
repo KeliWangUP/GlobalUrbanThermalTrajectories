@@ -188,9 +188,10 @@ at full sample size. To test a spatially partitioned export, run:
 python scripts/gee_modul/export_samplepoint_lst_spatial.py
 ```
 
-In `samplepoint_lst_spatial_export` in `config.json`, the initial tile side
-length is 640 native MODIS pixels (about 593 km in the MODIS projected grid
-at the reference scale).
+In `samplepoint_lst_spatial_export` in `config.json`, the test tile side
+length is 1280 native MODIS pixels (about 1186 km in the MODIS projected grid
+at the reference scale). One 640-pixel tile for 2020 completed successfully;
+the larger tile and denser regions still need to be tested.
 `selection: "test_city"` submits exactly one task for the tile containing
 the first `pixel_id` in `test.city_id`. The tile includes **all** sample
 points in that spatial block, not just points belonging to the test city.

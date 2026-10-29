@@ -36,7 +36,7 @@
   },
 
   "samplepoint_lst_spatial_export": {
-    "tile_pixels": 640,
+    "tile_pixels": 1280,
     "selection": "test_city",
     "tile_column": null,
     "tile_row": null,
