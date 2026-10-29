@@ -95,7 +95,22 @@ python scripts/gee_modul/export_samplepoint_attributes_failed_batch.py
 The retry script checks that the current sample-point asset and batch size
 still produce the same total batch count before submitting anything. It
 exports only the selected batch and appends `_retry` to the Drive task/file
-name so the retry does not collide with the original output.
+name so the retry does not collide with the original output. Since a retry of
+the same multi-city batch reproduced the reprojection failure, run the
+city-probe below before retrying that full batch again.
+
+To diagnose a persistent reprojection failure before retrying a complete
+batch, run:
+
+```bash
+python scripts/gee_modul/export_samplepoint_attributes_failed_city_probe.py
+```
+
+This selects the city with the most sample points in the failed batch and
+submits one city-only CSV probe. A successful city probe but failed
+multi-city batch indicates that the batch's spatial extent is too broad;
+the full workflow should then be partitioned spatially or by city in
+controlled waves.
 
 The workflow submits one Drive CSV task per `sample_points.city_batch_size`
 cities (currently 50), with one output row per sample point. It also supports

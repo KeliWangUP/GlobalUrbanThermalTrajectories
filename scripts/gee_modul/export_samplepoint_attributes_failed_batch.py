@@ -15,7 +15,7 @@ FAILED_BATCH_FILE = Path(__file__).with_name("failed.json")
 BATCH_PATTERN = re.compile(r"_city_batch_(\d+)_of_(\d+)$")
 
 
-def _read_failed_batch(path: Path) -> tuple[int, int, str]:
+def read_failed_batch(path: Path) -> tuple[int, int, str]:
     if not path.is_file():
         raise FileNotFoundError(f"Failed-batch file not found: {path}")
     with path.open("r", encoding="utf-8") as failed_file:
@@ -37,7 +37,7 @@ def main() -> None:
     config = load_config()
     initialize_gee(config)
     failed_batch_index, expected_batch_count, batch_name = (
-        _read_failed_batch(FAILED_BATCH_FILE)
+        read_failed_batch(FAILED_BATCH_FILE)
     )
     configured_batch_size = config["sample_points"]["city_batch_size"]
     if type(configured_batch_size) is not int or configured_batch_size < 1:
