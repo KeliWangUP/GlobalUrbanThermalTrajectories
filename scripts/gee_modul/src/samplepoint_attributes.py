@@ -167,7 +167,7 @@ def _sample_modis_grid_image(
             reducer=reducer,
             maxPixels=max_pixels
         )
-        .unmask(fill_value, sameFootprint=False)
+        .unmask(fill_value)
     )
     return modis_image.sampleRegions(
         collection=points,
