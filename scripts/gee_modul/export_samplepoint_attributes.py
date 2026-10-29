@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Callable
 
 import ee
 
@@ -22,9 +22,11 @@ def export_samplepoint_attributes(
     scale: float,
     selected_batch_index: int | None = None,
     expected_batch_count: int | None = None,
-    selected_city_id: Any | None = None
+    selected_city_id: Any | None = None,
+    selected_city_ids: list[Any] | None = None,
+    on_city_task_submitted: Callable[[Any, ee.batch.Task], None] | None = None
 ) -> list[ee.batch.Task]:
-    """Submit point-composition exports, optionally for one city batch."""
+    """Submit point-composition exports for all points or selected cities."""
     export_config = config["export"]
     point_asset = export_config["asset_root"]
     if not asset_exists(point_asset):
@@ -89,9 +91,19 @@ def export_samplepoint_attributes(
     batch_count = (
         len(city_ids) + city_batch_size - 1
     ) // city_batch_size
-    if selected_city_id is not None and selected_batch_index is not None:
+    if (
+        selected_city_id is not None
+        and selected_city_ids is not None
+    ):
         raise ValueError(
-            "Select either a city or a batch, not both."
+            "Select either one probe city or a list of retry cities, not both."
+        )
+    if (
+        (selected_city_id is not None or selected_city_ids is not None)
+        and selected_batch_index is not None
+    ):
+        raise ValueError(
+            "Select cities or a batch, not both."
         )
     if (
         expected_batch_count is not None
@@ -111,6 +123,20 @@ def export_samplepoint_attributes(
             f"Selected city ID {selected_city_id} is not present in the "
             "sample-point asset."
         )
+    if selected_city_ids is not None:
+        if not selected_city_ids:
+            raise ValueError("selected_city_ids must not be empty.")
+        if len(set(selected_city_ids)) != len(selected_city_ids):
+            raise ValueError("selected_city_ids must contain unique city IDs.")
+        missing_city_ids = [
+            city_id for city_id in selected_city_ids
+            if city_id not in city_ids
+        ]
+        if missing_city_ids:
+            raise ValueError(
+                "Selected city IDs are not present in the sample-point "
+                f"asset: {missing_city_ids}"
+            )
     if (
         selected_batch_index is not None
         and (
@@ -125,6 +151,8 @@ def export_samplepoint_attributes(
 
     if selected_city_id is not None:
         batch_specs = [(None, [selected_city_id])]
+    elif selected_city_ids is not None:
+        batch_specs = [(None, [city_id]) for city_id in selected_city_ids]
     elif selected_batch_index is not None:
         start = (selected_batch_index - 1) * city_batch_size
         batch_specs = [(
@@ -159,6 +187,12 @@ def export_samplepoint_attributes(
                 f"{dataset_name}_{version}_city_{selected_city_id}_probe"
             )
             print(f"[INFO] Submitting city probe: {selected_city_id}.")
+        elif selected_city_ids is not None:
+            city_id = batch_city_ids[0]
+            export_name = (
+                f"{dataset_name}_{version}_city_{city_id}_retry"
+            )
+            print(f"[INFO] Submitting city retry: {city_id}.")
         else:
             suffix = (
                 f"city_batch_{batch_index:04d}_of_{batch_count:04d}"
@@ -170,13 +204,20 @@ def export_samplepoint_attributes(
                 f"[INFO] Submitting batch {batch_index}/{batch_count}: "
                 f"{len(batch_city_ids)} cities; IDs={batch_city_ids}"
             )
-        tasks.append(export_table_to_drive(
+        task = export_table_to_drive(
             collection=collection,
             description=export_name,
             folder=folder,
             file_name=export_name,
             selectors=required_fields
-        ))
+        )
+        tasks.append(task)
+        if selected_city_ids is not None:
+            if on_city_task_submitted is not None:
+                on_city_task_submitted(batch_city_ids[0], task)
+            print(
+                f"[CITY_TASK] city_id={batch_city_ids[0]} task_id={task.id}"
+            )
 
     print(f"[INFO] Submitted {len(tasks)} sample-point export tasks.")
     return tasks

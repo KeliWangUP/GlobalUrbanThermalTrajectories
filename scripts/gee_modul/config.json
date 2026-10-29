@@ -15,6 +15,11 @@
     "city_batch_size": 50
   },
 
+  "failed_samplepoint_retry": {
+    "city_offset": 0,
+    "max_cities_per_run": 10
+  },
+
   "processing": {
     "tile_scale": 4
   },

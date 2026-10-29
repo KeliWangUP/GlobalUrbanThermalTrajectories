@@ -86,7 +86,8 @@ To submit exports for all sample points, run:
 python scripts/gee_modul/export_samplepoint_attributes.py
 ```
 
-To retry only the city batch named in `failed.json`, run:
+The single-batch retry helper accepts either a legacy `batch` string or a
+one-entry `batches` list in `failed.json`:
 
 ```bash
 python scripts/gee_modul/export_samplepoint_attributes_failed_batch.py
@@ -95,9 +96,8 @@ python scripts/gee_modul/export_samplepoint_attributes_failed_batch.py
 The retry script checks that the current sample-point asset and batch size
 still produce the same total batch count before submitting anything. It
 exports only the selected batch and appends `_retry` to the Drive task/file
-name so the retry does not collide with the original output. Since a retry of
-the same multi-city batch reproduced the reprojection failure, run the
-city-probe below before retrying that full batch again.
+name so the retry does not collide with the original output. For a list of
+multiple failed batches, use the per-city recovery script instead.
 
 To diagnose a persistent reprojection failure before retrying a complete
 batch, run:
@@ -106,11 +106,29 @@ batch, run:
 python scripts/gee_modul/export_samplepoint_attributes_failed_city_probe.py
 ```
 
-This selects the city with the most sample points in the failed batch and
-submits one city-only CSV probe. A successful city probe but failed
-multi-city batch indicates that the batch's spatial extent is too broad;
-the full workflow should then be partitioned spatially or by city in
-controlled waves.
+This requires exactly one failed batch in `failed.json`, selects the city
+with the most sample points in that batch, and submits one city-only CSV
+probe.
+
+To map all failed batches to their cities and submit city-only retries in
+controlled waves, run:
+
+```bash
+python scripts/gee_modul/export_samplepoint_attributes_failed_cities.py
+```
+
+The script validates that every failed task has the same total batch count as
+the current sample-point asset, then creates one Drive CSV task per city in
+the selected wave. The wave is controlled by
+`failed_samplepoint_retry.city_offset` and
+`failed_samplepoint_retry.max_cities_per_run` in `config.json` (defaults:
+first 10 failed cities). Each task name includes the city ID and `_retry`;
+the script prints the Earth Engine task ID next to each city ID and appends
+the submission time, city ID, and task ID to
+`failed_city_retry_task_log.jsonl`. After a wave, increase `city_offset` by
+the number of submitted cities before starting the next wave. Keep the 177
+successful batch exports; this script maps only the batch names listed in
+`failed.json`.
 
 The workflow submits one Drive CSV task per `sample_points.city_batch_size`
 cities (currently 50), with one output row per sample point. It also supports
