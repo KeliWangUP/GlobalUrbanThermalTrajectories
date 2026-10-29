@@ -189,14 +189,16 @@ python scripts/gee_modul/export_samplepoint_lst_spatial.py
 ```
 
 In `samplepoint_lst_spatial_export` in `config.json`, the test tile side
-length is 1280 native MODIS pixels (about 1186 km in the MODIS projected grid
-at the reference scale). One 640-pixel tile for 2020 completed successfully;
-the larger tile and denser regions still need to be tested.
+length is 640 native MODIS pixels (about 593 km in the MODIS projected grid
+at the reference scale). One 640-pixel tile and one 1280-pixel tile for 2020
+completed successfully; the full study period and denser regions still need
+to be tested.
 `selection: "test_city"` submits exactly one task for the tile containing
 the first `pixel_id` in `test.city_id`. The tile includes **all** sample
 points in that spatial block, not just points belonging to the test city.
 Each task covers every month from `study.start_year` to `study.end_year`,
-inclusive; the current study configuration is 2020 only. The script prints
+inclusive; the current study configuration is 2000-2024. The `study` years
+are shared with other exporters. The script prints
 the tile indices, point count, expected row count, task ID, and name.
 
 The tile indices are `floor(modis_x / tile_pixels)` and
