@@ -7,7 +7,7 @@ import ee
 
 from src.export_utils import (
     build_samplepoint_lst_selectors,
-    build_yearly_samplepoint_lst_statistics,
+    build_study_period_samplepoint_lst_statistics,
     export_table_to_drive
 )
 from src.samplepoint_spatial import (
@@ -109,18 +109,13 @@ def export_samplepoint_lst_spatial(
             f"years {start_year}-{end_year}; "
             f"expected rows {tile_point_count * (end_year - start_year + 1) * 12}."
         )
-        yearly_results = [
-            build_yearly_samplepoint_lst_statistics(
-                year=year,
-                points=tile_points,
-                config=config,
-                projection=projection,
-                scale=scale,
-                id_field=id_field
-            )
-            for year in range(start_year, end_year + 1)
-        ]
-        collection = ee.FeatureCollection(yearly_results).flatten()
+        collection = build_study_period_samplepoint_lst_statistics(
+            points=tile_points,
+            config=config,
+            projection=projection,
+            scale=scale,
+            id_field=id_field
+        )
         export_name = (
             f"{dataset_name}_{version}_tile_{tile_pixels}_"
             f"x{_signed_tile_index(column)}_y{_signed_tile_index(row)}_"

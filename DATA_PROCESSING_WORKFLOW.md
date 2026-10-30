@@ -165,6 +165,12 @@ python scripts/gee_modul/export_rural_all_cities_annual.py
 分区设置、全量提交方式及任务日志见
 [`scripts/gee_modul/README.md`](./scripts/gee_modul/README.md)。
 
+也可使用逐城市入口
+[`export_samplepoint_lst_city.py`](./scripts/gee_modul/export_samplepoint_lst_city.py)，
+每个城市提交一个覆盖完整研究期的任务。`priority_only` 可选择历史 1,700 城市
+或全部有样点城市；当前默认只提交 `test.city_id` 对应的单城市测试。逐城市和
+空间网格结果可能重叠，合并时需去重。
+
 ## 4. 本地数据层级
 
 ```text

@@ -100,8 +100,6 @@ class SpatialPartitionTests(unittest.TestCase):
         }
         tile_points = MagicMock()
         tile_points.size.return_value.getInfo.return_value = 3
-        flattened = MagicMock()
-        flattened.flatten.return_value = "collection"
         task = SimpleNamespace(id="task1")
         with tempfile.TemporaryDirectory() as directory:
             log_path = Path(directory) / "tasks.jsonl"
@@ -111,15 +109,16 @@ class SpatialPartitionTests(unittest.TestCase):
                 patch.object(exports, "tile_for_test_city", return_value=(-1, 2)),
                 patch.object(exports, "filter_tile", return_value=tile_points) as select,
                 patch.object(exports, "build_samplepoint_lst_selectors", return_value=["pixel_id", "city"]),
-                patch.object(exports, "build_yearly_samplepoint_lst_statistics", side_effect=["2019", "2020"]) as yearly,
-                patch.object(exports.ee, "FeatureCollection", return_value=flattened) as collection,
+                patch.object(exports, "build_study_period_samplepoint_lst_statistics", return_value="collection") as study,
                 patch.object(exports, "export_table_to_drive", return_value=task) as submit
             ):
                 tasks = exports.export_samplepoint_lst_spatial(config, "projection", 926)
             self.assertEqual(tasks, [task])
             select.assert_called_once_with("points", -1, 2, 640)
-            self.assertEqual([call.kwargs["year"] for call in yearly.call_args_list], [2019, 2020])
-            collection.assert_called_once_with(["2019", "2020"])
+            study.assert_called_once_with(
+                points=tile_points, config=config, projection="projection",
+                scale=926, id_field="city"
+            )
             self.assertEqual(submit.call_args.kwargs["collection"], "collection")
             self.assertEqual(submit.call_args.kwargs["selectors"], ["pixel_id", "city"])
             self.assertEqual(
@@ -163,7 +162,6 @@ class SpatialPartitionTests(unittest.TestCase):
         }
         tile_points = MagicMock()
         tile_points.size.return_value.getInfo.return_value = 1
-        collection = MagicMock()
         with tempfile.TemporaryDirectory() as directory:
             with (
                 patch.object(exports, "TASK_LOG_FILE", Path(directory) / "tasks.jsonl"),
@@ -171,8 +169,7 @@ class SpatialPartitionTests(unittest.TestCase):
                 patch.object(exports, "get_occupied_tiles", return_value=[(-1, 0), (0, 0), (1, 0)]),
                 patch.object(exports, "filter_tile", return_value=tile_points) as select,
                 patch.object(exports, "build_samplepoint_lst_selectors", return_value=["pixel_id"]),
-                patch.object(exports, "build_yearly_samplepoint_lst_statistics", return_value="year"),
-                patch.object(exports.ee, "FeatureCollection", return_value=collection),
+                patch.object(exports, "build_study_period_samplepoint_lst_statistics", return_value="collection"),
                 patch.object(exports, "export_table_to_drive", return_value=SimpleNamespace(id="task1"))
             ):
                 exports.export_samplepoint_lst_spatial(config, "projection", 926)
@@ -199,7 +196,6 @@ class SpatialPartitionTests(unittest.TestCase):
         }
         tile_points = MagicMock()
         tile_points.size.return_value.getInfo.return_value = 2
-        collection = MagicMock()
         digest = "a" * 64
         with tempfile.TemporaryDirectory() as directory:
             log_path = Path(directory) / "tasks.jsonl"
@@ -211,15 +207,14 @@ class SpatialPartitionTests(unittest.TestCase):
                 patch.object(exports, "tile_for_test_city", return_value=(1, 2)) as tile_for_city,
                 patch.object(exports, "filter_tile", return_value=tile_points) as tile_filter,
                 patch.object(exports, "build_samplepoint_lst_selectors", return_value=["pixel_id"]),
-                patch.object(exports, "build_yearly_samplepoint_lst_statistics", return_value="year") as yearly,
-                patch.object(exports.ee, "FeatureCollection", return_value=collection),
+                patch.object(exports, "build_study_period_samplepoint_lst_statistics", return_value="collection") as study,
                 patch.object(exports, "export_table_to_drive", return_value=SimpleNamespace(id="task")) as submit
             ):
                 exports.export_samplepoint_lst_spatial(config, "projection", 926)
             filter_priority.assert_called_once_with("all_points", "city", [42, 43])
             tile_for_city.assert_called_once_with("priority_points", "city", 42, 640)
             tile_filter.assert_called_once_with("priority_points", 1, 2, 640)
-            self.assertIs(yearly.call_args.kwargs["points"], tile_points)
+            self.assertIs(study.call_args.kwargs["points"], tile_points)
             self.assertEqual(
                 submit.call_args.kwargs["description"],
                 "sample_lst_v0.3_priority_aaaaaaaaaaaa_tile_640_xp1_yp2_2020_2020"

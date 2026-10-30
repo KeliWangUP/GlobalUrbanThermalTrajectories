@@ -13,7 +13,7 @@ def load_priority_city_ids(
     id_field: str
 ) -> tuple[list[int], str, Path]:
     """Read the actual historical priority-city IDs from a CSV snapshot."""
-    csv_path = Path(config["samplepoint_lst_spatial_export"]["priority_city_csv"])
+    csv_path = Path(config["cities"]["priority_city_csv"])
     if not csv_path.is_absolute():
         csv_path = CONFIG_PATH.parent / csv_path
     csv_path = csv_path.resolve()

@@ -6,6 +6,7 @@ from src.export_utils import (
 from export_city_monthly_lst import export_city
 from export_rural_all_cities_annual import export_rural_all_cities
 from src.samplepoint_attribute_exports import export_samplepoint_attributes
+from src.samplepoint_lst_city_exports import export_samplepoint_lst_city
 from src.samplepoint_lst_spatial_exports import export_samplepoint_lst_spatial
 from export_samplepoint_lst import export_samplepoint_lst
 from export_samplepoint_lst_month import export_samplepoint_lst_month
@@ -17,7 +18,8 @@ EXPORTERS = {
     "samplepoint_attributes": export_samplepoint_attributes,
     "samplepoint_lst": export_samplepoint_lst,
     "samplepoint_lst_month": export_samplepoint_lst_month,
-    "samplepoint_lst_spatial": export_samplepoint_lst_spatial
+    "samplepoint_lst_spatial": export_samplepoint_lst_spatial,
+    "samplepoint_lst_city": export_samplepoint_lst_city
 }
 
 

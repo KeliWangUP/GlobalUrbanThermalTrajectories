@@ -488,6 +488,33 @@ def build_yearly_samplepoint_lst_statistics(
         print(f"[BUILD] Sample-point LST {year}-{month:02d}")
     return ee.FeatureCollection(monthly_results).flatten()
 
+
+def build_study_period_samplepoint_lst_statistics(
+    points: ee.FeatureCollection,
+    config: dict[str, Any],
+    projection: ee.Projection,
+    scale: float,
+    id_field: str
+) -> ee.FeatureCollection:
+    """Build monthly sample-point records for the configured study years."""
+    study = config["study"]
+    start_year, end_year = study["start_year"], study["end_year"]
+    if type(start_year) is not int or type(end_year) is not int or start_year > end_year:
+        raise ValueError("Study years must be integers with start_year <= end_year.")
+    yearly_results = [
+        build_yearly_samplepoint_lst_statistics(
+            year=year,
+            points=points,
+            config=config,
+            projection=projection,
+            scale=scale,
+            id_field=id_field
+        )
+        for year in range(start_year, end_year + 1)
+    ]
+    return ee.FeatureCollection(yearly_results).flatten()
+
+
 def build_study_period_lst_statistics(
     regions: ee.FeatureCollection,
     config: dict[str, Any],

@@ -38,12 +38,18 @@
   "samplepoint_lst_spatial_export": {
     "tile_pixels": 640,
     "city_scope": "priority",
-    "priority_city_csv": "../../data/rural_1700/rural_lst_over_300k_v0.3_2020.csv",
     "selection": "test_city",
     "tile_column": null,
     "tile_row": null,
     "tile_offset": 0,
     "max_tiles_per_run": 1
+  },
+
+  "samplepoint_lst_city_export": {
+    "priority_only": true,
+    "selection": "test_city",
+    "city_offset": 0,
+    "max_cities_per_run": 1
   },
 
   "reference_grid": {
@@ -57,6 +63,7 @@
     "asset": "users/keliwang/urban_expansion/GHSL_urban_bounds_2024",
     "id_field": "ID_UC_G0",
     "boundary_definition": "fixed_2024",
+    "priority_city_csv": "../../data/rural_1700/rural_lst_over_300k_v0.3_2020.csv",
     "priority_points_asset": "projects/ee-keliwang/assets/cities_over_300k"
   },
 

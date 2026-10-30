@@ -22,7 +22,7 @@ class SamplepointPriorityTests(unittest.TestCase):
     def test_reads_unique_ids_and_stable_digest(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "cities.csv"
-            config = {"samplepoint_lst_spatial_export": {"priority_city_csv": str(path)}}
+            config = {"cities": {"priority_city_csv": str(path)}}
             self.write_csv(path, ["city"], [{"city": "42"}, {"city": "7"}, {"city": "42"}])
             ids, digest, resolved_path = priority.load_priority_city_ids(config, "city")
             self.assertEqual(ids, [7, 42])
@@ -33,7 +33,7 @@ class SamplepointPriorityTests(unittest.TestCase):
     def test_rejects_missing_invalid_and_empty_ids(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "cities.csv"
-            config = {"samplepoint_lst_spatial_export": {"priority_city_csv": str(path)}}
+            config = {"cities": {"priority_city_csv": str(path)}}
             for fields, rows in (
                 (["wrong"], [{"wrong": "42"}]),
                 (["city"], [{"city": ""}]),

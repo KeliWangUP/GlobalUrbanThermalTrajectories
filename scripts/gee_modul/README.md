@@ -190,9 +190,9 @@ python scripts/gee_modul/export_samplepoint_lst_spatial.py
 
 In `samplepoint_lst_spatial_export` in `config.json`, the test tile side
 length is 640 native MODIS pixels (about 593 km in the MODIS projected grid
-at the reference scale). One 640-pixel tile and one 1280-pixel tile for 2020
-completed successfully; the full study period and denser regions still need
-to be tested.
+at the reference scale). The 2020 tests for one 640-pixel tile and one
+1280-pixel tile completed, as did a 2000-2024 test for one 640-pixel tile;
+denser regions still need to be tested.
 `selection: "test_city"` submits exactly one task for the tile containing
 the first `pixel_id` in `test.city_id`. The tile includes **all** sample
 points in the selected city scope within that spatial block, not just points
@@ -203,7 +203,7 @@ are shared with other exporters. The script prints
 the tile indices, point count, expected row count, task ID, and name.
 
 `samplepoint_lst_spatial_export.city_scope` is currently `"priority"`:
-city IDs are read from `priority_city_csv`, relative to `config.json` unless
+city IDs are read from `cities.priority_city_csv`, relative to `config.json` unless
 an absolute path is provided. The configured historical rural 2020 CSV
 contains 1,700 distinct IDs; the 2000-2024 historical CSVs were checked to
 contain the same IDs. The exporter checks that every requested city exists
@@ -243,6 +243,46 @@ same tile can create duplicates. Changing tile size or time range to retry
 failed work changes its coverage: retain a manifest and merge only successful,
 non-overlapping outputs, checking `(pixel_id, city ID, year, month)` keys.
 Matching output row counts should be checked against the printed expectation.
+
+### One task per city
+
+The city-partitioned exporter uses the same monthly statistics, missing-value
+handling and CSV selectors as the spatial exporter. It submits one CSV task
+per selected city, with every sample point and every month in the configured
+`study.start_year`-`study.end_year` period. Run from the repository root:
+
+```bash
+python scripts/gee_modul/export_samplepoint_lst_city.py
+```
+
+In `samplepoint_lst_city_export`, set `priority_only` to `true` for the
+historical IDs from `cities.priority_city_csv`, or `false` for every city
+in the sample-point asset. In priority mode, the script verifies that each
+requested city has sample points before submitting tasks.
+
+The initial `selection` is `"test_city"`: one task is submitted for
+`test.city_id`. For a queue, set `selection` to `"all"`. `city_offset`
+is a zero-based offset into the sorted selected city IDs and
+`max_cities_per_run` limits the number submitted by that invocation. Set
+it to at least the number of cities to request them all at once, subject
+to Earth Engine queue limits; it does not set task concurrency. Before
+resuming, keep the point asset, priority switch, city list and study years
+unchanged. The printed queue digest helps verify that the city order has
+not changed.
+
+Every submitted task and its city ID, queue offset/digest, sample-point
+count and years are appended to `samplepoint_lst_city_task_log.jsonl`.
+This is not a completion tracker: check Earth Engine task status before
+retrying. The script does not automatically skip submitted or completed
+tasks. If a submission stops partway, inspect the log and Earth Engine
+task list before adjusting the offset, and do not blindly rerun the same
+range. City exports and spatial exports can contain the same rows; do not
+merge overlapping results without deduplication.
+
+The `samplepoint_lst_city` target is also available in `run_export.py`.
+Changing the city-export settings does not change `export.targets`.
+
+### Unpartitioned LST exporters and checks
 
 The previous unpartitioned annual exporter remains available:
 
