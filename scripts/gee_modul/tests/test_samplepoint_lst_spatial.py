@@ -84,6 +84,7 @@ class SpatialPartitionTests(unittest.TestCase):
         config = {
             "samplepoint_lst_spatial_export": {
                 "tile_pixels": 640, "selection": "test_city",
+                "city_scope": "all",
                 "tile_column": None, "tile_row": None,
                 "tile_offset": 0, "max_tiles_per_run": 1
             },
@@ -135,6 +136,7 @@ class SpatialPartitionTests(unittest.TestCase):
         config = {
             "samplepoint_lst_spatial_export": {
                 "tile_pixels": 0, "selection": "test_city",
+                "city_scope": "all",
                 "tile_offset": 0, "max_tiles_per_run": 1
             }
         }
@@ -147,6 +149,7 @@ class SpatialPartitionTests(unittest.TestCase):
         config = {
             "samplepoint_lst_spatial_export": {
                 "tile_pixels": 640, "selection": "all",
+                "city_scope": "all",
                 "tile_offset": 1, "max_tiles_per_run": 1
             },
             "study": {"start_year": 2020, "end_year": 2020},
@@ -177,6 +180,53 @@ class SpatialPartitionTests(unittest.TestCase):
                 config["samplepoint_lst_spatial_export"]["tile_offset"] = 3
                 with self.assertRaisesRegex(ValueError, "outside"):
                     exports.export_samplepoint_lst_spatial(config, "projection", 926)
+
+    def test_priority_scope_filters_before_selecting_tile_and_marks_output(self):
+        config = {
+            "samplepoint_lst_spatial_export": {
+                "tile_pixels": 640, "selection": "test_city",
+                "city_scope": "priority", "tile_offset": 0, "max_tiles_per_run": 1
+            },
+            "study": {"start_year": 2020, "end_year": 2020},
+            "cities": {"id_field": "city"},
+            "test": {"city_id": 42},
+            "project": {"version": "v0.3"},
+            "export": {
+                "asset_root": "points",
+                "samplepoint_lst_dataset_name": "sample_lst",
+                "folder": "folder"
+            }
+        }
+        tile_points = MagicMock()
+        tile_points.size.return_value.getInfo.return_value = 2
+        collection = MagicMock()
+        digest = "a" * 64
+        with tempfile.TemporaryDirectory() as directory:
+            log_path = Path(directory) / "tasks.jsonl"
+            with (
+                patch.object(exports, "TASK_LOG_FILE", log_path),
+                patch.object(exports, "load_sample_points", return_value=("all_points", 10)),
+                patch.object(exports, "load_priority_city_ids", return_value=([42, 43], digest, Path("priority.csv"))),
+                patch.object(exports, "filter_priority_sample_points", return_value=("priority_points", 3)) as filter_priority,
+                patch.object(exports, "tile_for_test_city", return_value=(1, 2)) as tile_for_city,
+                patch.object(exports, "filter_tile", return_value=tile_points) as tile_filter,
+                patch.object(exports, "build_samplepoint_lst_selectors", return_value=["pixel_id"]),
+                patch.object(exports, "build_yearly_samplepoint_lst_statistics", return_value="year") as yearly,
+                patch.object(exports.ee, "FeatureCollection", return_value=collection),
+                patch.object(exports, "export_table_to_drive", return_value=SimpleNamespace(id="task")) as submit
+            ):
+                exports.export_samplepoint_lst_spatial(config, "projection", 926)
+            filter_priority.assert_called_once_with("all_points", "city", [42, 43])
+            tile_for_city.assert_called_once_with("priority_points", "city", 42, 640)
+            tile_filter.assert_called_once_with("priority_points", 1, 2, 640)
+            self.assertIs(yearly.call_args.kwargs["points"], tile_points)
+            self.assertEqual(
+                submit.call_args.kwargs["description"],
+                "sample_lst_v0.3_priority_aaaaaaaaaaaa_tile_640_xp1_yp2_2020_2020"
+            )
+            record = json.loads(log_path.read_text(encoding="utf-8"))
+            self.assertEqual(record["city_scope"], "priority")
+            self.assertEqual(record["priority_city_ids_sha256"], digest)
 
 
 if __name__ == "__main__":

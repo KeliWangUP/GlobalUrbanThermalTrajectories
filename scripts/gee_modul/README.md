@@ -195,11 +195,29 @@ completed successfully; the full study period and denser regions still need
 to be tested.
 `selection: "test_city"` submits exactly one task for the tile containing
 the first `pixel_id` in `test.city_id`. The tile includes **all** sample
-points in that spatial block, not just points belonging to the test city.
+points in the selected city scope within that spatial block, not just points
+belonging to the test city.
 Each task covers every month from `study.start_year` to `study.end_year`,
 inclusive; the current study configuration is 2000-2024. The `study` years
 are shared with other exporters. The script prints
 the tile indices, point count, expected row count, task ID, and name.
+
+`samplepoint_lst_spatial_export.city_scope` is currently `"priority"`:
+city IDs are read from `priority_city_csv`, relative to `config.json` unless
+an absolute path is provided. The configured historical rural 2020 CSV
+contains 1,700 distinct IDs; the 2000-2024 historical CSVs were checked to
+contain the same IDs. The exporter checks that every requested city exists
+in the sample-point asset and stops with missing IDs if not. It filters
+sample points to these IDs **before** choosing tiles. A SHA-256 digest of the
+sorted city IDs is recorded in the task log and its first 12 characters
+appear in priority task/file names.
+
+Set `city_scope` to `"all"` to retain the original global behavior; the
+priority CSV is then not used. Global outputs overlap with priority outputs,
+so do not concatenate them without deduplication. This setting affects only
+the spatial sample-point LST exporter, not other export targets. The
+historical CSV is a local input; it must exist on the machine submitting the
+tasks. `test_city` must belong to the selected scope.
 
 The tile indices are `floor(modis_x / tile_pixels)` and
 `floor(modis_y / tile_pixels)`, including for negative coordinates. Each
@@ -217,7 +235,8 @@ tile size, and study period unchanged between waves, or offsets and output
 names may refer to different work.
 
 Submitted tasks are appended to `samplepoint_lst_spatial_task_log.jsonl` with
-their tile, point count, time range and task ID. This is a submission log, not
+their city scope and list digest, tile, point count, time range and task ID.
+This is a submission log, not
 an automatic completion tracker. If submission stops or a task fails, check
 the log and Earth Engine task status before submitting again; rerunning the
 same tile can create duplicates. Changing tile size or time range to retry

@@ -157,9 +157,10 @@ python scripts/gee_modul/export_rural_all_cities_annual.py
 [`export_samplepoint_lst_spatial.py`](./scripts/gee_modul/export_samplepoint_lst_spatial.py)。
 640 和 1280 像元网格各有一个 2020 年任务已完成；当前测试网格边长
 为 640 像元，仍仅提交一个包含测试城市某个样点的网格；
-该网格中属于其他城市的样点也会被导出。一个任务覆盖配置的整个研究期，
-当前测试配置为 2000–2024 年。月合成、质量字段和输出表头沿用既有样点 LST
-逻辑。网格大小只是试验起点，成功后仍需对样点密集区和更长时间范围验证。
+当前城市范围是历史乡村结果中实际导出的 1,700 个城市，先按城市 ID 过滤，
+再划分网格；该网格中属于其他优先城市的样点也会被导出。一个任务覆盖配置的
+整个研究期，当前测试配置为 2000–2024 年。月合成、质量字段和输出表头沿用
+既有样点 LST 逻辑。网格大小只是试验起点，成功后仍需对样点密集区验证。
 
 分区设置、全量提交方式及任务日志见
 [`scripts/gee_modul/README.md`](./scripts/gee_modul/README.md)。

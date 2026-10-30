@@ -15,6 +15,7 @@ from src.samplepoint_spatial import (
     get_occupied_tiles,
     tile_for_test_city
 )
+from src.samplepoint_priority import filter_priority_sample_points, load_priority_city_ids
 from src.samplepoint_utils import load_sample_points
 
 
@@ -36,6 +37,7 @@ def export_samplepoint_lst_spatial(
     offset = spatial["tile_offset"]
     max_tiles = spatial["max_tiles_per_run"]
     selection = spatial["selection"]
+    city_scope = spatial["city_scope"]
     if type(tile_pixels) is not int or tile_pixels < 1:
         raise ValueError("samplepoint_lst_spatial_export.tile_pixels must be positive.")
     if type(offset) is not int or offset < 0:
@@ -44,6 +46,8 @@ def export_samplepoint_lst_spatial(
         raise ValueError("samplepoint_lst_spatial_export.max_tiles_per_run must be positive.")
     if selection not in ("test_city", "tile", "all"):
         raise ValueError("Spatial selection must be 'test_city', 'tile', or 'all'.")
+    if city_scope not in ("priority", "all"):
+        raise ValueError("Spatial city_scope must be 'priority' or 'all'.")
     if selection != "all" and offset != 0:
         raise ValueError("tile_offset must be 0 for test_city or tile selection.")
 
@@ -56,6 +60,21 @@ def export_samplepoint_lst_spatial(
     points, point_count = load_sample_points(
         config, ["pixel_id", id_field, "modis_x", "modis_y"]
     )
+    priority_hash = None
+    priority_csv = None
+    if city_scope == "priority":
+        priority_ids, priority_hash, priority_csv = load_priority_city_ids(
+            config, id_field
+        )
+        total_point_count = point_count
+        points, point_count = filter_priority_sample_points(
+            points, id_field, priority_ids
+        )
+        print(
+            f"[INFO] Priority scope: {len(priority_ids)} cities; "
+            f"{point_count} of {total_point_count} points; "
+            f"city list SHA-256={priority_hash}; source={priority_csv}."
+        )
     if selection == "test_city":
         tiles = [tile_for_test_city(
             points, id_field, config["test"]["city_id"], tile_pixels
@@ -107,6 +126,12 @@ def export_samplepoint_lst_spatial(
             f"x{_signed_tile_index(column)}_y{_signed_tile_index(row)}_"
             f"{start_year}_{end_year}"
         )
+        if priority_hash is not None:
+            export_name = (
+                f"{dataset_name}_{version}_priority_{priority_hash[:12]}_"
+                f"tile_{tile_pixels}_x{_signed_tile_index(column)}_"
+                f"y{_signed_tile_index(row)}_{start_year}_{end_year}"
+            )
         task = export_table_to_drive(
             collection=collection,
             description=export_name,
@@ -120,6 +145,9 @@ def export_samplepoint_lst_spatial(
             "task_id": task.id,
             "description": export_name,
             "point_asset": export_config["asset_root"],
+            "city_scope": city_scope,
+            "priority_city_csv": str(priority_csv) if priority_csv else None,
+            "priority_city_ids_sha256": priority_hash,
             "tile_pixels": tile_pixels,
             "tile_column": column,
             "tile_row": row,

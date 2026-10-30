@@ -37,6 +37,8 @@
 
   "samplepoint_lst_spatial_export": {
     "tile_pixels": 640,
+    "city_scope": "priority",
+    "priority_city_csv": "../../data/rural_1700/rural_lst_over_300k_v0.3_2020.csv",
     "selection": "test_city",
     "tile_column": null,
     "tile_row": null,
