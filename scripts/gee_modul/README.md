@@ -189,9 +189,10 @@ measurement of impervious cover. The code assumes the documented 0, 2-38
 GAIA class encoding and does not add a per-pixel source-class QA field.
 
 The native annual 0/1 indicators are converted to area bands, with masked
-source pixels contributing zero. Each MODIS center point is expanded to its
-square cell footprint, and `reduceRegions` sums the area bands on the source
-image's native grid; the cell geometry's area is the denominator. This avoids
+source pixels contributing zero. Each MODIS cell rectangle is built from its
+`modis_x`/`modis_y` indices and the projection's affine transform.
+`reduceRegions` sums the area bands on each source image's native grid, and the
+affine pixel area is the denominator. This avoids geometry buffering and
 rescaling the MODIS projection for point sampling. Each output row retains
 `pixel_id`, `ID_UC_G0`, `modis_x`,
 `modis_y`, optional `lon`/`lat`, and the 37 annual

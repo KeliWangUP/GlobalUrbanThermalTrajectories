@@ -11,36 +11,48 @@ from src import samplepoint_grid as grid
 
 
 class SamplepointGridTests(unittest.TestCase):
-    def test_builds_square_cell_regions_from_pixel_centers(self):
+    def test_builds_cell_rectangle_from_pixel_indices_and_affine_transform(self):
         points = MagicMock()
-        projection = object()
+        projection = MagicMock()
+        projection.getInfo.return_value = {
+            "transform": [60, 0, 100, 0, -60, 200]
+        }
         region = MagicMock()
         feature = MagicMock()
-        geometry = feature.geometry.return_value
-        buffered = geometry.buffer.return_value
-        buffered.bounds.return_value = region
+        feature.get.side_effect = lambda name: 0
+
+        class Number:
+            def __init__(self, value):
+                self.value = value
+
+            def multiply(self, value):
+                return Number(self.value * value)
+
+            def add(self, value):
+                return Number(self.value + value)
+
         with (
-            patch.object(grid.ee, "ErrorMargin", return_value="projected-margin") as error_margin,
+            patch.object(grid.ee, "Number", side_effect=Number),
+            patch.object(grid.ee, "Geometry") as geometry,
             patch.object(grid.ee, "Feature", return_value=feature)
         ):
+            geometry.Rectangle.return_value = region
             result = grid.build_modis_cell_regions(points, projection, 60)
             map_function = points.map.call_args.args[0]
             map_function("point")
         self.assertEqual(result, points.map.return_value)
-        error_margin.assert_called_once_with(1, "projected")
-        geometry.buffer.assert_called_once_with(
-            30, maxError="projected-margin", proj=projection
-        )
-        buffered.bounds.assert_called_once_with(
-            maxError="projected-margin", proj=projection
-        )
+        self.assertEqual(len(geometry.Rectangle.call_args.args), 1)
+        coordinates = geometry.Rectangle.call_args.args[0]
+        self.assertEqual([value.value for value in coordinates], [100, 140, 160, 200])
+        self.assertEqual(geometry.Rectangle.call_args.kwargs, {
+            "proj": projection, "geodesic": False
+        })
         feature.setGeometry.assert_called_once_with(region)
         feature.setGeometry.return_value.set.assert_called_once_with(
-            "_modis_area_m2", region.area.return_value
+            "_modis_area_m2", 3600
         )
-        region.area.assert_called_once_with(
-            maxError="projected-margin", proj=projection
-        )
+        feature.geometry.assert_not_called()
+        region.area.assert_not_called()
 
     def test_reduces_regions_on_native_image_grid(self):
         image = MagicMock()
