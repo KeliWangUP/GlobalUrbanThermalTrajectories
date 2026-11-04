@@ -34,7 +34,7 @@ class SamplepointGridTests(unittest.TestCase):
         with (
             patch.object(grid.ee, "Number", side_effect=Number),
             patch.object(grid.ee, "Geometry") as geometry,
-            patch.object(grid.ee, "ErrorMargin", return_value="projected-margin") as error_margin,
+            patch.object(grid.ee, "ErrorMargin", return_value="meter-margin") as error_margin,
             patch.object(grid.ee, "Feature", return_value=feature)
         ):
             geometry.Polygon.return_value = region
@@ -42,7 +42,7 @@ class SamplepointGridTests(unittest.TestCase):
             map_function = points.map.call_args.args[0]
             map_function("point")
         self.assertEqual(result, points.map.return_value)
-        error_margin.assert_called_once_with(1, "projected")
+        error_margin.assert_called_once_with(1, "meters")
         self.assertEqual(len(geometry.Polygon.call_args.args), 1)
         ring = geometry.Polygon.call_args.args[0][0]
         self.assertEqual(
@@ -50,7 +50,7 @@ class SamplepointGridTests(unittest.TestCase):
             [[100, 200], [160, 200], [160, 140], [100, 140], [100, 200]]
         )
         self.assertEqual(geometry.Polygon.call_args.kwargs, {
-            "proj": projection, "geodesic": False, "maxError": "projected-margin"
+            "proj": projection, "geodesic": False, "maxError": "meter-margin"
         })
         feature.setGeometry.assert_called_once_with(region)
         feature.setGeometry.return_value.set.assert_called_once_with(
