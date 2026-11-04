@@ -2,9 +2,12 @@ from typing import Any
 
 import ee
 
+from src.samplepoint_attributes import (
+    _join_by_point_and_city,
+    _sample_modis_grid_image
+)
 from src.samplepoint_grid import (
-    build_modis_cell_regions,
-    reduce_over_modis_cells,
+    sample_modis_pixel_area,
     validate_max_pixels
 )
 from src.samplepoint_utils import samplepoint_base_fields
@@ -55,19 +58,34 @@ def sample_fullcell_isa(
 ) -> ee.FeatureCollection:
     """Reduce urban area within each MODIS cell and return cell fractions."""
     base_fields = samplepoint_base_fields(config)
+    id_field = config["cities"]["id_field"]
     max_pixels = config["samplepoint_attributes"]["max_pixels_per_cell"]
-    regions = build_modis_cell_regions(points, projection, scale)
-    areas = reduce_over_modis_cells(
-        area_image,
-        regions,
-        ee.Reducer.sum(),
-        max_pixels,
-        config["processing"]["tile_scale"]
+    tile_scale = config["processing"]["tile_scale"]
+    areas = _sample_modis_grid_image(
+        image=area_image,
+        reducer=ee.Reducer.sum(),
+        points=points,
+        properties=base_fields,
+        projection=projection,
+        scale=scale,
+        max_pixels=max_pixels,
+        tile_scale=tile_scale,
+        fill_value=0
+    )
+    modis_areas = sample_modis_pixel_area(
+        points, base_fields, projection, scale, tile_scale
+    )
+    joined = _join_by_point_and_city(
+        primary=areas,
+        secondary=modis_areas,
+        id_field=id_field,
+        match_property="_modis_area"
     )
 
     def format_feature(feature: ee.Feature) -> ee.Feature:
         feature = ee.Feature(feature)
-        cell_area = ee.Number(feature.get("_modis_area_m2"))
+        area_feature = ee.Feature(feature.get("_modis_area"))
+        cell_area = ee.Number(area_feature.get("modis_area_m2"))
         fractions = ee.Dictionary({
             f"isa_urban_fraction_{year}": (
                 ee.Number(feature.get(f"isa_area_m2_{year}")).divide(cell_area)
@@ -80,4 +98,4 @@ def sample_fullcell_isa(
         )
         return ee.Feature(None, properties)
 
-    return areas.map(format_feature)
+    return joined.map(format_feature)

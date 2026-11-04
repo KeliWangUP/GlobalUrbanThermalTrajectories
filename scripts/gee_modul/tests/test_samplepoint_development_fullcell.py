@@ -219,29 +219,30 @@ class SamplepointFullCellDevelopmentTests(unittest.TestCase):
             values = {**example_properties(), "pixel_id": "MODIS_1_2", "city": 20}
             result = MagicMock()
             result.getInfo.return_value = {"features": [{"properties": values}]}
+            area_result = MagicMock()
+            area_result.getInfo.return_value = {"features": [{
+                "properties": {
+                    "pixel_id": "MODIS_1_2",
+                    "city": 20,
+                    "modis_area_m2": 3600
+                }
+            }]}
             sources = SimpleNamespace(isa_years=(1985, 2020, 2021))
             with (
                 patch.object(checks, "load_priority_city_ids_json", return_value=([20], "digest", Path("ids.json"))),
-                patch.object(checks, "check_synthetic_fullcell") as isa_check,
                 patch.object(checks, "check_synthetic_development") as development_check,
                 patch.object(checks, "load_sample_points", return_value=(points, 1)),
                 patch.object(checks.ee.Filter, "eq", return_value="city_filter"),
                 patch.object(checks, "prepare_samplepoint_sources", return_value=sources),
                 patch.object(checks, "prepare_fullcell_development_images", return_value="images"),
                 patch.object(checks, "sample_fullcell_development", return_value=result),
-                patch.object(checks, "build_modis_cell_regions") as cell_regions
+                patch.object(checks, "sample_modis_pixel_area", return_value=area_result)
             ):
-                cell_regions.return_value.map.return_value.getInfo.return_value = {
-                    "features": [{
-                        "properties": {
-                            "pixel_id": "MODIS_1_2", "city": 20,
-                            "_modis_area_m2": 3600
-                        }
-                    }]
-                }
                 checks.check_samplepoint_development_city(config, "projection", 926)
-                isa_check.assert_called_once_with(config)
-                development_check.assert_called_once_with(config)
+                development_check.assert_not_called()
+                checks.sample_modis_pixel_area.assert_called_once_with(
+                    selected, ["pixel_id", "city"], "projection", 926, 4
+                )
                 result.getInfo.return_value = {"features": []}
                 with self.assertRaisesRegex(ValueError, "did not preserve"):
                     checks.check_samplepoint_development_city(config, "projection", 926)

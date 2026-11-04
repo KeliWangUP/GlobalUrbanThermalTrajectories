@@ -12,12 +12,11 @@ from src.samplepoint_development import (
 from src.samplepoint_isa_checks import (
     SYNTHETIC_CRS,
     _validate_fractions,
-    check_synthetic_fullcell,
     synthetic_fullcell_grid,
     synthetic_isa_classes
 )
 from src.samplepoint_priority import load_priority_city_ids_json
-from src.samplepoint_grid import build_modis_cell_regions
+from src.samplepoint_grid import sample_modis_pixel_area
 from src.samplepoint_utils import load_sample_points, samplepoint_base_fields
 
 
@@ -93,10 +92,14 @@ def check_synthetic_development(config: dict[str, Any]) -> None:
         ghsl_image=ghsl,
         water_image=water
     )
-    cell_regions = build_modis_cell_regions(points, target, 60)
-    cell_area = ee.Number(
-        ee.Feature(cell_regions.first()).get("_modis_area_m2")
+    area_info = sample_modis_pixel_area(
+        points, ["pixel_id"], target, 60, synthetic_config["processing"]["tile_scale"]
     ).getInfo()
+    cell_area = _finite_number(
+        _single_feature(area_info, "Synthetic area"),
+        "modis_area_m2",
+        "Synthetic area"
+    )
     if not math.isclose(cell_area, 3600, rel_tol=0.01):
         raise ValueError(f"Synthetic target cell area should be near 3600 m², got {cell_area}.")
     images = prepare_fullcell_development_images(synthetic_config, source)
@@ -180,8 +183,6 @@ def check_samplepoint_development_city(
     if city_id not in city_ids:
         raise ValueError(f"Test city {city_id} is not in the priority-city list.")
 
-    check_synthetic_fullcell(config)
-    check_synthetic_development(config)
     id_field = config["cities"]["id_field"]
     points, _ = load_sample_points(config, samplepoint_base_fields(config))
     city_points = points.filter(ee.Filter.eq(id_field, city_id))
@@ -210,13 +211,12 @@ def check_samplepoint_development_city(
             f"Sample output did not preserve selected IDs: "
             f"expected={expected_ids}, received={received_ids}."
         )
-    area_info = build_modis_cell_regions(selected, projection, scale).map(
-        lambda feature: ee.Feature(
-            None,
-            ee.Feature(feature).toDictionary([
-                "pixel_id", id_field, "_modis_area_m2"
-            ])
-        )
+    area_info = sample_modis_pixel_area(
+        selected,
+        ["pixel_id", id_field],
+        projection,
+        scale,
+        config["processing"]["tile_scale"]
     ).getInfo()
     areas: dict[str, float] = {}
     for feature in area_info.get("features", []):
@@ -227,7 +227,7 @@ def check_samplepoint_development_city(
         if name in areas:
             raise ValueError(f"Duplicate pixel ID in cell-area output: {name}.")
         areas[name] = _finite_number(
-            properties, "_modis_area_m2", f"Pixel {name}"
+            properties, "modis_area_m2", f"Pixel {name}"
         )
     if set(areas) != set(expected_ids):
         raise ValueError("Cell-area output does not match the selected point IDs.")

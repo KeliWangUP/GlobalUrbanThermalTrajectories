@@ -189,11 +189,12 @@ measurement of impervious cover. The code assumes the documented 0, 2-38
 GAIA class encoding and does not add a per-pixel source-class QA field.
 
 The native annual 0/1 indicators are converted to area bands, with masked
-source pixels contributing zero. Each MODIS cell rectangle is built from its
-`modis_x`/`modis_y` indices and the projection's affine transform.
-`reduceRegions` sums the area bands on each source image's native grid, and the
-affine pixel area is the denominator. This avoids geometry buffering and
-rescaling the MODIS projection for point sampling. Each output row retains
+source pixels contributing zero. The area bands are aggregated with the
+existing `reduceResolution` path and sampled at each MODIS point. MODIS
+`pixelArea` is sampled separately at those same points using the same reference
+projection and scale; each annual area numerator is divided by that sampled
+pixel area. No per-point cell geometry or geometry-area operation is needed.
+Each output row retains
 `pixel_id`, `ID_UC_G0`, `modis_x`,
 `modis_y`, optional `lon`/`lat`, and the 37 annual
 `isa_urban_fraction_YEAR` fields. It contains no GHSL or water columns;
@@ -206,17 +207,12 @@ First evaluate one city's sample points without submitting a Drive task:
 python scripts\gee_modul\test_samplepoint_isa_city.py
 ```
 
-The script first evaluates a small synthetic `EPSG:3857` grid near the
-equator in Earth Engine: one aligned 60 m target cell contains four 30 m
-source pixels with known GAIA classes and a masked zero-class pixel. The
-expected 1985/2020/2021 fractions are 0.25/0.5/0.75, and all fractions are
-0 for an entirely masked cell. This test CRS does not change the actual
-MODIS reference projection.
-It then tests `test.city_id` using `samplepoint_isa_export.test_point_limit`
-points. Set `test_pixel_id` to a specific pixel ID or `null` to select the
-first points sorted by ID. The script checks point preservation, finite
-fractions, range and annual monotonicity. This is a calculation test, not a
-coverage QA filter on exported data.
+The script evaluates actual points in `test.city_id` using
+`samplepoint_isa_export.test_point_limit` points. It does not run the former
+synthetic Earth Engine preflight. Set `test_pixel_id` to a specific pixel ID
+or `null` to select the first points sorted by ID. The script checks point
+preservation, finite fractions, range and annual monotonicity. This is a
+calculation check, not a coverage QA filter on exported data.
 
 To submit a **single full-city** Drive export, leave
 `samplepoint_isa_export.selection` as `"test_city"` and run:
@@ -262,16 +258,17 @@ volume mean/count fields for the configured years. There are no additional
 ISA coverage QA columns.
 
 - ISA uses the full MODIS cell as denominator and treats masked GAIA pixels
-  as zero contribution, including genuinely missing data. Urban area is
-  summed directly within each MODIS cell footprint.
-- Water area and valid WBM coverage area are summed directly within the same
-  cell footprint. `water_fraction` is water area divided by the
-  **entire MODIS cell area**; masked WBM contributes zero. When WBM has no
-  coverage, both areas and the full-cell
+  as zero contribution, including genuinely missing data. Urban area bands
+  are aggregated with `reduceResolution` and sampled at MODIS points.
+- Water area and valid WBM coverage area use the same
+  `reduceResolution`/point-sampling path. `water_fraction` is water area
+  divided by the **entire MODIS cell area**, sampled independently from
+  `pixelArea` on the same MODIS grid; masked WBM contributes zero. When WBM
+  has no coverage, both areas and the full-cell
   fraction are 0; this must not be interpreted as proof of no water.
 - GHSL fields retain their legacy meanings: the mean of overlapping valid
-  100 m source-pixel values and the valid-pixel count, reduced directly over
-  the cell footprint, not the total built area or volume of a MODIS cell. If
+  100 m source-pixel values and the valid-pixel count, aggregated with
+  `reduceResolution`, not the total built area or volume of a MODIS cell. If
   GHSL has no match, the point remains in the output with null means and zero
   counts.
 
@@ -286,14 +283,13 @@ First run the single-city calculation checks:
 python scripts\gee_modul\test_samplepoint_development_city.py
 ```
 
-The script evaluates synthetic source pixels inside explicit 60 m cell
-geometries in Earth Engine using `EPSG:3857` near the equator for ISA
-fractions, water fraction/area and WBM coverage, GHSL mean, missing GHSL
-coverage and fully masked WBM. This test
-CRS does not change the actual MODIS reference projection. It then validates up to
-`samplepoint_development_export.test_point_limit` points in `test.city_id`;
-set `test_pixel_id` to a specific ID or `null` for the first sorted points.
-This invokes GEE calculations but submits no Drive task.
+The script validates up to
+`samplepoint_development_export.test_point_limit` actual points in
+`test.city_id`; set `test_pixel_id` to a specific ID or `null` for the first
+sorted points. It checks ISA fractions, water area/fraction and coverage,
+GHSL means/counts, and sampled MODIS cell areas without running the former
+synthetic Earth Engine preflight. This invokes GEE calculations but submits
+no Drive task.
 
 To submit one full-city Drive test, keep
 `samplepoint_development_export.selection` as `"test_city"` and run:

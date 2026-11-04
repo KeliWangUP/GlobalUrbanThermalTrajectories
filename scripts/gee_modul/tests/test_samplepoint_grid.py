@@ -11,77 +11,35 @@ from src import samplepoint_grid as grid
 
 
 class SamplepointGridTests(unittest.TestCase):
-    def test_builds_cell_rectangle_from_pixel_indices_and_affine_transform(self):
+    def test_samples_pixel_area_on_reference_grid(self):
         points = MagicMock()
         projection = MagicMock()
-        projection.getInfo.return_value = {
-            "transform": [60, 0, 100, 0, -60, 200]
-        }
-        region = MagicMock()
-        feature = MagicMock()
-        feature.get.side_effect = lambda name: 0
-
-        class Number:
-            def __init__(self, value):
-                self.value = value
-
-            def multiply(self, value):
-                return Number(self.value * value)
-
-            def add(self, value):
-                return Number(self.value + value)
-
-        with (
-            patch.object(grid.ee, "Number", side_effect=Number),
-            patch.object(grid.ee, "Geometry") as geometry,
-            patch.object(grid.ee, "ErrorMargin", return_value="meter-margin") as error_margin,
-            patch.object(grid.ee, "Feature", return_value=feature)
-        ):
-            geometry.Polygon.return_value = region
-            result = grid.build_modis_cell_regions(points, projection, 60)
-            map_function = points.map.call_args.args[0]
-            map_function("point")
-        self.assertEqual(result, points.map.return_value)
-        error_margin.assert_called_once_with(1, "meters")
-        self.assertEqual(len(geometry.Polygon.call_args.args), 1)
-        ring = geometry.Polygon.call_args.args[0][0]
-        self.assertEqual(
-            [[value.value for value in point] for point in ring],
-            [[100, 200], [160, 200], [160, 140], [100, 140], [100, 200]]
-        )
-        self.assertEqual(geometry.Polygon.call_args.kwargs, {
-            "proj": projection, "geodesic": False, "maxError": "meter-margin"
-        })
-        feature.setGeometry.assert_called_once_with(region)
-        feature.setGeometry.return_value.set.assert_called_once_with(
-            "_modis_area_m2", 3600
-        )
-        feature.geometry.assert_not_called()
-        region.area.assert_not_called()
-
-    def test_reduces_regions_on_native_image_grid(self):
         image = MagicMock()
-        regions = MagicMock()
-        reducer = object()
-        with patch.object(grid, "validate_max_pixels") as validate:
-            result = grid.reduce_over_modis_cells(image, regions, reducer, 4096, 4)
-        validate.assert_called_once_with(4096)
-        image.reduceRegions.assert_called_once_with(
-            collection=regions,
-            reducer=reducer,
+        pixel_area = image.pixelArea.return_value
+        with patch.object(grid.ee, "Image", image):
+            result = grid.sample_modis_pixel_area(
+                points, ["pixel_id", "city"], projection, 926, 4
+            )
+        pixel_area.rename.assert_called_once_with("modis_area_m2")
+        pixel_area.rename.return_value.sampleRegions.assert_called_once_with(
+            collection=points,
+            properties=["pixel_id", "city"],
+            projection=projection,
+            scale=926,
             tileScale=4,
-            maxPixelsPerRegion=4096
+            geometries=False
         )
-        self.assertEqual(result, image.reduceRegions.return_value)
+        self.assertEqual(
+            result, pixel_area.rename.return_value.sampleRegions.return_value
+        )
 
-    def test_rejects_invalid_scale_or_pixel_limit(self):
-        points = MagicMock()
-        for scale in (0, -1, float("nan"), True):
-            with self.subTest(scale=scale), self.assertRaises(ValueError):
-                grid.build_modis_cell_regions(points, object(), scale)
+    def test_rejects_invalid_pixel_limit(self):
         for max_pixels in (0, -1, True, 2.5):
             with self.subTest(max_pixels=max_pixels), self.assertRaises(ValueError):
                 grid.validate_max_pixels(max_pixels)
+
+    def test_accepts_positive_integer_pixel_limit(self):
+        grid.validate_max_pixels(4096)
 
 
 if __name__ == "__main__":

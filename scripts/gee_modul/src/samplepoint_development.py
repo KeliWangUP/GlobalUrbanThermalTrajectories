@@ -5,12 +5,10 @@ import ee
 
 from src.samplepoint_attributes import (
     SamplePointSources,
-    _join_by_point_and_city
+    _join_by_point_and_city,
+    _sample_modis_grid_image
 )
-from src.samplepoint_grid import (
-    build_modis_cell_regions,
-    reduce_over_modis_cells
-)
+from src.samplepoint_grid import sample_modis_pixel_area
 from src.samplepoint_isa import build_fullcell_isa_image
 from src.samplepoint_utils import samplepoint_base_fields
 
@@ -62,26 +60,50 @@ def sample_fullcell_development(
     scale: float,
     images: FullCellDevelopmentImages
 ) -> ee.FeatureCollection:
-    """Reduce ISA, water and GHSL directly over each MODIS pixel footprint."""
+    """Aggregate rasters to the reference grid and divide areas by cell area."""
     base_fields = samplepoint_base_fields(config)
     id_field = config["cities"]["id_field"]
     max_pixels = config["samplepoint_attributes"]["max_pixels_per_cell"]
     tile_scale = config["processing"]["tile_scale"]
-    regions = build_modis_cell_regions(points, projection, scale)
-    sum_reducer = ee.Reducer.sum()
-
-    isa_stats = reduce_over_modis_cells(
-        images.isa_area_image, regions, sum_reducer, max_pixels, tile_scale
+    isa_stats = _sample_modis_grid_image(
+        image=images.isa_area_image,
+        reducer=ee.Reducer.sum(),
+        points=points,
+        properties=base_fields,
+        projection=projection,
+        scale=scale,
+        max_pixels=max_pixels,
+        tile_scale=tile_scale,
+        fill_value=0
     )
-    water_stats = reduce_over_modis_cells(
-        images.water_area_image, regions, sum_reducer, max_pixels, tile_scale
+    water_stats = _sample_modis_grid_image(
+        image=images.water_area_image,
+        reducer=ee.Reducer.sum(),
+        points=points,
+        properties=base_fields,
+        projection=projection,
+        scale=scale,
+        max_pixels=max_pixels,
+        tile_scale=tile_scale,
+        fill_value=0
     )
     ghsl_reducer = ee.Reducer.mean().combine(
         reducer2=ee.Reducer.count(),
         sharedInputs=True
     )
-    ghsl_stats = reduce_over_modis_cells(
-        images.ghsl_image, regions, ghsl_reducer, max_pixels, tile_scale
+    ghsl_stats = _sample_modis_grid_image(
+        image=images.ghsl_image,
+        reducer=ghsl_reducer,
+        points=points,
+        properties=base_fields,
+        projection=projection,
+        scale=scale,
+        max_pixels=max_pixels,
+        tile_scale=tile_scale,
+        fill_value=-1
+    )
+    modis_area_stats = sample_modis_pixel_area(
+        points, base_fields, projection, scale, tile_scale
     )
     isa_water = _join_by_point_and_city(
         primary=isa_stats,
@@ -89,17 +111,24 @@ def sample_fullcell_development(
         id_field=id_field,
         match_property="_water_stats"
     )
-    joined = _join_by_point_and_city(
+    isa_water_ghsl = _join_by_point_and_city(
         primary=isa_water,
         secondary=ghsl_stats,
         id_field=id_field,
         match_property="_ghsl_stats",
         outer=True
     )
+    joined = _join_by_point_and_city(
+        primary=isa_water_ghsl,
+        secondary=modis_area_stats,
+        id_field=id_field,
+        match_property="_modis_area"
+    )
 
     def format_feature(feature: ee.Feature) -> ee.Feature:
         feature = ee.Feature(feature)
-        cell_area = ee.Number(feature.get("_modis_area_m2"))
+        area_feature = ee.Feature(feature.get("_modis_area"))
+        cell_area = ee.Number(area_feature.get("modis_area_m2"))
         isa_properties = ee.Dictionary({
             f"isa_urban_fraction_{year}": (
                 ee.Number(feature.get(f"isa_area_m2_{year}")).divide(cell_area)

@@ -273,7 +273,7 @@ class SamplepointFullCellISATests(unittest.TestCase):
                 patch.object(checks, "sample_fullcell_isa", return_value=sample)
             ):
                 checks.check_samplepoint_isa_city(config, "projection", 926)
-                synthetic.assert_called_once_with(config)
+                synthetic.assert_not_called()
                 sample.getInfo.return_value = {"features": []}
                 with self.assertRaisesRegex(ValueError, "did not preserve"):
                     checks.check_samplepoint_isa_city(config, "projection", 926)

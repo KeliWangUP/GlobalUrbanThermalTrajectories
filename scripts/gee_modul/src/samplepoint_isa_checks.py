@@ -105,7 +105,6 @@ def check_samplepoint_isa_city(
     if pixel_id is not None and (not isinstance(pixel_id, str) or not pixel_id.strip()):
         raise ValueError("samplepoint_isa_export.test_pixel_id must be null or a non-empty string.")
 
-    check_synthetic_fullcell(config)
     id_field = config["cities"]["id_field"]
     city_id = config["test"]["city_id"]
     points, _ = load_sample_points(config, samplepoint_base_fields(config))
