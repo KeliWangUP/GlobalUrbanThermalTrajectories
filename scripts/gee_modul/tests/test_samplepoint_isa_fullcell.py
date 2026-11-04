@@ -87,6 +87,7 @@ class SamplepointFullCellISATests(unittest.TestCase):
         indicators = [MagicMock(), MagicMock(), MagicMock()]
         source.gte.side_effect = indicators
         pixel_area = MagicMock()
+        source_pixel_area = pixel_area.setDefaultProjection.return_value
         with (
             patch.object(isa.ee, "Image") as image,
         ):
@@ -97,13 +98,16 @@ class SamplepointFullCellISATests(unittest.TestCase):
             )
         self.assertEqual(source.gte.call_args_list, [call(38), call(3), call(2)])
         self.assertEqual(source.lte.call_args_list, [call(38), call(38), call(38)])
+        pixel_area.setDefaultProjection.assert_called_once_with(
+            source.projection.return_value
+        )
         for indicator, year in zip(indicators, (1985, 2020, 2021)):
             indicator.And.assert_called_once()
             indicator.And.return_value.unmask.assert_called_once_with(
                 0, sameFootprint=False
             )
             indicator.And.return_value.unmask.return_value.multiply.assert_called_once_with(
-                pixel_area
+                source_pixel_area
             )
             indicator.And.return_value.unmask.return_value.multiply.return_value.rename.assert_called_once_with(
                 f"isa_area_m2_{year}"

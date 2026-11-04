@@ -37,11 +37,14 @@ def build_fullcell_isa_image(
     ):
         raise ValueError("ISA years must be unique, increasing and within 1985-2021.")
     validate_max_pixels(max_pixels)
+    pixel_area = ee.Image.pixelArea().setDefaultProjection(
+        isa_image.projection()
+    )
     bands = [
         isa_image.gte(2023 - year)
         .And(isa_image.lte(38))
         .unmask(0, sameFootprint=False)
-        .multiply(ee.Image.pixelArea())
+        .multiply(pixel_area)
         .rename(f"isa_area_m2_{year}")
         for year in years
     ]

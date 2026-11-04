@@ -72,6 +72,7 @@ class SamplepointFullCellDevelopmentTests(unittest.TestCase):
     def test_water_builds_area_numerators_and_independent_coverage(self):
         water = MagicMock()
         pixel_area = MagicMock()
+        source_pixel_area = pixel_area.setDefaultProjection.return_value
         water_area = MagicMock()
         valid_area = MagicMock()
         with (
@@ -83,7 +84,10 @@ class SamplepointFullCellDevelopmentTests(unittest.TestCase):
             water.mask.return_value.gt.return_value.unmask.return_value.multiply.return_value.rename.return_value = valid_area
             result = development.build_fullcell_water_image(water)
         water.unmask.assert_called_once_with(0, sameFootprint=False)
-        water.unmask.return_value.multiply.assert_called_once_with(pixel_area)
+        pixel_area.setDefaultProjection.assert_called_once_with(
+            water.projection.return_value
+        )
+        water.unmask.return_value.multiply.assert_called_once_with(source_pixel_area)
         water.unmask.return_value.multiply.return_value.rename.assert_called_once_with(
             "water_area_num_m2"
         )
@@ -92,7 +96,7 @@ class SamplepointFullCellDevelopmentTests(unittest.TestCase):
             0, sameFootprint=False
         )
         water.mask.return_value.gt.return_value.unmask.return_value.multiply.assert_called_once_with(
-            pixel_area
+            source_pixel_area
         )
         water.mask.return_value.gt.return_value.unmask.return_value.multiply.return_value.rename.assert_called_once_with(
             "water_valid_area_num_m2"

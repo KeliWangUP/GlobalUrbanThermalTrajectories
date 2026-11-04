@@ -23,7 +23,9 @@ class FullCellDevelopmentImages:
 
 def build_fullcell_water_image(water_image: ee.Image) -> ee.Image:
     """Build water and valid-coverage area bands on the WBM source grid."""
-    pixel_area = ee.Image.pixelArea()
+    pixel_area = ee.Image.pixelArea().setDefaultProjection(
+        water_image.projection()
+    )
     water_area = (
         water_image.unmask(0, sameFootprint=False)
         .multiply(pixel_area)

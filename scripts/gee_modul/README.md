@@ -193,7 +193,8 @@ source pixels contributing zero. The area bands are aggregated with the
 existing `reduceResolution` path and sampled at each MODIS point. MODIS
 `pixelArea` is sampled separately at those same points using the same reference
 projection and scale; each annual area numerator is divided by that sampled
-pixel area. No per-point cell geometry or geometry-area operation is needed.
+pixel area. Source-pixel areas use the ISA/WBM source projection before
+aggregation. No per-point cell geometry or geometry-area operation is needed.
 Each output row retains
 `pixel_id`, `ID_UC_G0`, `modis_x`,
 `modis_y`, optional `lon`/`lat`, and the 37 annual
