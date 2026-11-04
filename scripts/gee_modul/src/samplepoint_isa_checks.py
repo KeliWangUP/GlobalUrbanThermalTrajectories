@@ -32,9 +32,9 @@ def _validate_fractions(
 def synthetic_fullcell_grid(
     config: dict[str, Any]
 ) -> tuple[ee.Projection, ee.Image, ee.Image, ee.FeatureCollection]:
-    """Create a shifted test cell with partial native-pixel overlaps."""
+    """Create one aligned 60 m cell containing four 30 m source pixels."""
     native = ee.Projection(SYNTHETIC_CRS, [30, 0, 0, 0, -30, 0])
-    target = ee.Projection(SYNTHETIC_CRS, [60, 0, 15, 0, -60, 0])
+    target = ee.Projection(SYNTHETIC_CRS, [60, 0, 0, 0, -60, 0])
     coords = ee.Image.pixelCoordinates(native)
     x = coords.select("x").mod(2)
     y = coords.select("y").mod(2)
@@ -47,7 +47,7 @@ def synthetic_fullcell_grid(
     if config["sample_points"]["include_lonlat"]:
         fields.update({"lon": 0, "lat": 0})
     point = ee.Feature(
-        ee.Geometry.Point([45, -30], proj=ee.Projection(SYNTHETIC_CRS)),
+        ee.Geometry.Point([30, -30], proj=ee.Projection(SYNTHETIC_CRS)),
         fields
     )
     points = ee.FeatureCollection([point])

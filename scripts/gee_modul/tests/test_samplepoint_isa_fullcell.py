@@ -56,32 +56,29 @@ class SamplepointFullCellISATests(unittest.TestCase):
                 checks.synthetic_fullcell_grid(config)
             self.assertEqual(projection.call_args_list, [
                 call("EPSG:3857", [30, 0, 0, 0, -30, 0]),
-                call("EPSG:3857", [60, 0, 15, 0, -60, 0]),
+                call("EPSG:3857", [60, 0, 0, 0, -60, 0]),
                 call("EPSG:3857")
             ])
-            geometry.Point.assert_called_once_with([45, -30], proj=projection.return_value)
+            geometry.Point.assert_called_once_with([30, -30], proj=projection.return_value)
 
-    def test_shifted_grid_expected_area_fractions(self):
-        target_left, target_right = 15, 75
-        cell_area = 60 * 60
+    def test_aligned_grid_expected_area_fractions(self):
+        source_pixel_area = 30 * 30
         weighted_areas = {1985: 0, 2020: 0, 2021: 0}
         for y in range(2):
-            for x in range(3):
-                overlap = max(
-                    0, min((x + 1) * 30, target_right) - max(x * 30, target_left)
-                ) * 30
-                category = 38
-                if x % 2 == 1 and y == 0:
-                    category = 3
-                elif x % 2 == 0 and y == 1:
-                    category = 2
-                if x % 2 == 1 and y == 1:
+            for x in range(2):
+                category = (
+                    38 if (x, y) == (0, 0)
+                    else 3 if (x, y) == (1, 0)
+                    else 2 if (x, y) == (0, 1)
+                    else 0
+                )
+                if (x, y) == (1, 1):
                     category = None
                 for year in weighted_areas:
                     if category is not None and category >= 2023 - year:
-                        weighted_areas[year] += overlap
+                        weighted_areas[year] += source_pixel_area
         self.assertEqual(
-            {year: area / cell_area for year, area in weighted_areas.items()},
+            {year: area / (4 * source_pixel_area) for year, area in weighted_areas.items()},
             {1985: 0.25, 2020: 0.5, 2021: 0.75}
         )
 

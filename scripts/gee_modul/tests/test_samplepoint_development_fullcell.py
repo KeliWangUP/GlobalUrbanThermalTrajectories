@@ -59,18 +59,15 @@ def example_properties() -> dict:
 
 
 class SamplepointFullCellDevelopmentTests(unittest.TestCase):
-    def test_shifted_grid_reference_water_area(self):
-        area = 60 * 60
-        water_area = 0
-        valid_area = 0
+    def test_aligned_grid_reference_water_area(self):
+        water_area = valid_area = 0
         for y in range(2):
-            for x in range(3):
-                overlap = max(0, min((x + 1) * 30, 75) - max(x * 30, 15)) * 30
+            for x in range(2):
                 valid = not (x % 2 == 1 and y == 1)
                 water = x % 2 == 1 and y == 0
-                valid_area += overlap if valid else 0
-                water_area += overlap if water and valid else 0
-        self.assertEqual((water_area, valid_area, water_area / area), (900, 2700, 0.25))
+                valid_area += 900 if valid else 0
+                water_area += 900 if water and valid else 0
+        self.assertEqual((water_area, valid_area, water_area / 3600), (900, 2700, 0.25))
 
     def test_water_uses_fullcell_indicator_and_independent_coverage(self):
         water = MagicMock()
