@@ -41,10 +41,11 @@ def build_fullcell_isa_image(
         isa_image.projection()
     )
     bands = [
-        isa_image.gte(2023 - year)
-        .And(isa_image.lte(38))
-        .unmask(0, sameFootprint=False)
-        .multiply(pixel_area)
+        pixel_area.multiply(
+            isa_image.gte(2023 - year)
+            .And(isa_image.lte(38))
+            .unmask(0, sameFootprint=False)
+        )
         .rename(f"isa_area_m2_{year}")
         for year in years
     ]

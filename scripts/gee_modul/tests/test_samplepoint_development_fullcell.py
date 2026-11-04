@@ -73,32 +73,35 @@ class SamplepointFullCellDevelopmentTests(unittest.TestCase):
         water = MagicMock()
         pixel_area = MagicMock()
         source_pixel_area = pixel_area.setDefaultProjection.return_value
+        masked_water_area = MagicMock()
+        masked_valid_area = MagicMock()
         water_area = MagicMock()
         valid_area = MagicMock()
+        source_pixel_area.updateMask.side_effect = [
+            masked_water_area,
+            masked_valid_area
+        ]
+        masked_water_area.unmask.return_value.rename.return_value = water_area
+        masked_valid_area.unmask.return_value.rename.return_value = valid_area
         with (
             patch.object(development.ee, "Image") as image,
         ):
             image.pixelArea.return_value = pixel_area
             image.cat.return_value = "area-image"
-            water.unmask.return_value.multiply.return_value.rename.return_value = water_area
-            water.mask.return_value.gt.return_value.unmask.return_value.multiply.return_value.rename.return_value = valid_area
             result = development.build_fullcell_water_image(water)
-        water.unmask.assert_called_once_with(0, sameFootprint=False)
         pixel_area.setDefaultProjection.assert_called_once_with(
             water.projection.return_value
         )
-        water.unmask.return_value.multiply.assert_called_once_with(source_pixel_area)
-        water.unmask.return_value.multiply.return_value.rename.assert_called_once_with(
+        source_pixel_area.updateMask.assert_has_calls([
+            call(water),
+            call(water.mask.return_value)
+        ])
+        masked_water_area.unmask.assert_called_once_with(0)
+        masked_water_area.unmask.return_value.rename.assert_called_once_with(
             "water_area_num_m2"
         )
-        water.mask.return_value.gt.assert_called_once_with(0)
-        water.mask.return_value.gt.return_value.unmask.assert_called_once_with(
-            0, sameFootprint=False
-        )
-        water.mask.return_value.gt.return_value.unmask.return_value.multiply.assert_called_once_with(
-            source_pixel_area
-        )
-        water.mask.return_value.gt.return_value.unmask.return_value.multiply.return_value.rename.assert_called_once_with(
+        masked_valid_area.unmask.assert_called_once_with(0)
+        masked_valid_area.unmask.return_value.rename.assert_called_once_with(
             "water_valid_area_num_m2"
         )
         image.cat.assert_called_once_with([

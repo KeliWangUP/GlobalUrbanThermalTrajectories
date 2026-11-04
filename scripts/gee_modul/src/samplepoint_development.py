@@ -27,14 +27,13 @@ def build_fullcell_water_image(water_image: ee.Image) -> ee.Image:
         water_image.projection()
     )
     water_area = (
-        water_image.unmask(0, sameFootprint=False)
-        .multiply(pixel_area)
+        pixel_area.updateMask(water_image)
+        .unmask(0)
         .rename("water_area_num_m2")
     )
     valid_area = (
-        water_image.mask().gt(0)
-        .unmask(0, sameFootprint=False)
-        .multiply(pixel_area)
+        pixel_area.updateMask(water_image.mask())
+        .unmask(0)
         .rename("water_valid_area_num_m2")
     )
     return ee.Image.cat([water_area, valid_area])

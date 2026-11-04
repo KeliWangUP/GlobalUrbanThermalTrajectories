@@ -88,6 +88,8 @@ class SamplepointFullCellISATests(unittest.TestCase):
         source.gte.side_effect = indicators
         pixel_area = MagicMock()
         source_pixel_area = pixel_area.setDefaultProjection.return_value
+        product_images = [MagicMock(), MagicMock(), MagicMock()]
+        source_pixel_area.multiply.side_effect = product_images
         with (
             patch.object(isa.ee, "Image") as image,
         ):
@@ -106,10 +108,12 @@ class SamplepointFullCellISATests(unittest.TestCase):
             indicator.And.return_value.unmask.assert_called_once_with(
                 0, sameFootprint=False
             )
-            indicator.And.return_value.unmask.return_value.multiply.assert_called_once_with(
-                source_pixel_area
-            )
-            indicator.And.return_value.unmask.return_value.multiply.return_value.rename.assert_called_once_with(
+        self.assertEqual(source_pixel_area.multiply.call_args_list, [
+            call(indicator.And.return_value.unmask.return_value)
+            for indicator in indicators
+        ])
+        for product, year in zip(product_images, (1985, 2020, 2021)):
+            product.rename.assert_called_once_with(
                 f"isa_area_m2_{year}"
             )
         self.assertEqual(result, "area-image")
