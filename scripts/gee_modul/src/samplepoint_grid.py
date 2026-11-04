@@ -17,18 +17,16 @@ def build_modis_cell_regions(
     if type(scale) not in (int, float) or not math.isfinite(scale) or scale <= 0:
         raise ValueError("MODIS pixel scale must be a positive finite number.")
 
-    max_error = ee.ErrorMargin(1)
-
     def to_cell(feature: ee.Feature) -> ee.Feature:
         feature = ee.Feature(feature)
         cell = (
             feature.geometry()
-            .buffer(scale / 2, maxError=max_error, proj=projection)
-            .bounds(maxError=max_error, proj=projection)
+            .buffer(scale / 2, proj=projection)
+            .bounds(proj=projection)
         )
         return feature.setGeometry(cell).set(
             "_modis_area_m2",
-            cell.area(maxError=max_error, proj=projection)
+            cell.area(proj=projection)
         )
 
     return points.map(to_cell)

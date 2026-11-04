@@ -14,31 +14,25 @@ class SamplepointGridTests(unittest.TestCase):
     def test_builds_square_cell_regions_from_pixel_centers(self):
         points = MagicMock()
         projection = object()
-        margin = object()
         region = MagicMock()
         feature = MagicMock()
         geometry = feature.geometry.return_value
         buffered = geometry.buffer.return_value
         buffered.bounds.return_value = region
         with (
-            patch.object(grid.ee, "ErrorMargin", return_value=margin),
             patch.object(grid.ee, "Feature", return_value=feature)
         ):
             result = grid.build_modis_cell_regions(points, projection, 60)
             map_function = points.map.call_args.args[0]
             map_function("point")
         self.assertEqual(result, points.map.return_value)
-        geometry.buffer.assert_called_once_with(
-            30, maxError=margin, proj=projection
-        )
-        buffered.bounds.assert_called_once_with(
-            maxError=margin, proj=projection
-        )
+        geometry.buffer.assert_called_once_with(30, proj=projection)
+        buffered.bounds.assert_called_once_with(proj=projection)
         feature.setGeometry.assert_called_once_with(region)
         feature.setGeometry.return_value.set.assert_called_once_with(
             "_modis_area_m2", region.area.return_value
         )
-        region.area.assert_called_once_with(maxError=margin, proj=projection)
+        region.area.assert_called_once_with(proj=projection)
 
     def test_reduces_regions_on_native_image_grid(self):
         image = MagicMock()
