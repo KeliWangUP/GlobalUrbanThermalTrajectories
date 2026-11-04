@@ -10,6 +10,7 @@ from src.samplepoint_development import (
     sample_fullcell_development
 )
 from src.samplepoint_isa_checks import (
+    SYNTHETIC_CRS,
     _validate_fractions,
     check_synthetic_fullcell,
     synthetic_fullcell_grid,
@@ -120,7 +121,7 @@ def check_synthetic_development(config: dict[str, Any]) -> None:
     missing_ghsl = ghsl.clip(
         ee.Geometry.Rectangle(
             [1000000, 1000000, 1000060, 1000060],
-            proj=ee.Projection("EPSG:6933"),
+            proj=ee.Projection(SYNTHETIC_CRS),
             geodesic=False
         )
     )

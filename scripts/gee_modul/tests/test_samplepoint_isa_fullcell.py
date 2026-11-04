@@ -43,6 +43,24 @@ def make_config(log_path: Path) -> dict:
 
 
 class SamplepointFullCellISATests(unittest.TestCase):
+    def test_synthetic_grid_uses_supported_projection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = make_config(Path(directory) / "tasks.jsonl")
+            with (
+                patch.object(checks.ee, "Projection") as projection,
+                patch.object(checks.ee, "Image"),
+                patch.object(checks.ee, "Geometry") as geometry,
+                patch.object(checks.ee, "Feature"),
+                patch.object(checks.ee, "FeatureCollection")
+            ):
+                checks.synthetic_fullcell_grid(config)
+            self.assertEqual(projection.call_args_list, [
+                call("EPSG:3857", [30, 0, 0, 0, -30, 0]),
+                call("EPSG:3857", [60, 0, 15, 0, -60, 0]),
+                call("EPSG:3857")
+            ])
+            geometry.Point.assert_called_once_with([45, -30], proj=projection.return_value)
+
     def test_shifted_grid_expected_area_fractions(self):
         target_left, target_right = 15, 75
         cell_area = 60 * 60

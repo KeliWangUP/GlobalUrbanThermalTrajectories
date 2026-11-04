@@ -8,6 +8,9 @@ from src.samplepoint_isa import build_fullcell_isa_image, sample_fullcell_isa
 from src.samplepoint_utils import load_sample_points, samplepoint_base_fields
 
 
+SYNTHETIC_CRS = "EPSG:3857"
+
+
 def _validate_fractions(
     properties: dict[str, Any],
     years: tuple[int, ...],
@@ -30,8 +33,8 @@ def synthetic_fullcell_grid(
     config: dict[str, Any]
 ) -> tuple[ee.Projection, ee.Image, ee.Image, ee.FeatureCollection]:
     """Create a shifted test cell with partial native-pixel overlaps."""
-    native = ee.Projection("EPSG:6933", [30, 0, 0, 0, -30, 0])
-    target = ee.Projection("EPSG:6933", [60, 0, 15, 0, -60, 0])
+    native = ee.Projection(SYNTHETIC_CRS, [30, 0, 0, 0, -30, 0])
+    target = ee.Projection(SYNTHETIC_CRS, [60, 0, 15, 0, -60, 0])
     coords = ee.Image.pixelCoordinates(native)
     x = coords.select("x").mod(2)
     y = coords.select("y").mod(2)
@@ -44,7 +47,7 @@ def synthetic_fullcell_grid(
     if config["sample_points"]["include_lonlat"]:
         fields.update({"lon": 0, "lat": 0})
     point = ee.Feature(
-        ee.Geometry.Point([45, -30], proj=ee.Projection("EPSG:6933")),
+        ee.Geometry.Point([45, -30], proj=ee.Projection(SYNTHETIC_CRS)),
         fields
     )
     points = ee.FeatureCollection([point])
@@ -63,6 +66,7 @@ def synthetic_isa_classes(x: ee.Image, y: ee.Image) -> ee.Image:
 
 def check_synthetic_fullcell(config: dict[str, Any]) -> None:
     """Check masked-zero and fractional-overlap behavior on a tiny GEE grid."""
+    print(f"[INFO] Synthetic full-cell checks use {SYNTHETIC_CRS}.")
     target, x, y, points = synthetic_fullcell_grid(config)
     classes = synthetic_isa_classes(x, y)
     years = (1985, 2020, 2021)

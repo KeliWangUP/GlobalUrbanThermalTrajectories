@@ -202,9 +202,11 @@ First evaluate one city's sample points without submitting a Drive task:
 python scripts\gee_modul\test_samplepoint_isa_city.py
 ```
 
-The script first evaluates a small synthetic grid in Earth Engine: the
-expected 1985/2020/2021 fractions are 0.25/0.5/0.75 for a shifted grid with
-partial overlaps and a masked area, and 0/0/0 for an entirely masked cell.
+The script first evaluates a small synthetic `EPSG:3857` grid near the
+equator in Earth Engine: the expected 1985/2020/2021 fractions are
+0.25/0.5/0.75 for a shifted grid with partial overlaps and a masked area,
+and 0/0/0 for an entirely masked cell. This test CRS does not change the
+actual MODIS reference projection.
 It then tests `test.city_id` using `samplepoint_isa_export.test_point_limit`
 points. Set `test_pixel_id` to a specific pixel ID or `null` to select the
 first points sorted by ID. The script checks point preservation, finite
@@ -278,9 +280,10 @@ First run the single-city calculation checks:
 python scripts\gee_modul\test_samplepoint_development_city.py
 ```
 
-The script evaluates synthetic shifted-grid cases in Earth Engine for ISA
-fractions, water fraction/area and WBM coverage, GHSL mean, missing GHSL
-coverage and fully masked WBM. It then validates up to
+The script evaluates synthetic shifted-grid cases in Earth Engine using
+`EPSG:3857` near the equator for ISA fractions, water fraction/area and WBM
+coverage, GHSL mean, missing GHSL coverage and fully masked WBM. This test
+CRS does not change the actual MODIS reference projection. It then validates up to
 `samplepoint_development_export.test_point_limit` points in `test.city_id`;
 set `test_pixel_id` to a specific ID or `null` for the first sorted points.
 This invokes GEE calculations but submits no Drive task.
