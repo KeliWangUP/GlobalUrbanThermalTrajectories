@@ -3,6 +3,8 @@ from typing import Any
 
 import ee
 
+from src.samplepoint_utils import samplepoint_base_fields
+
 
 @dataclass(frozen=True)
 class SamplePointSources:
@@ -16,15 +18,7 @@ class SamplePointSources:
 def build_samplepoint_selectors(
     config: dict[str, Any]
 ) -> list[str]:
-    id_field = config["cities"]["id_field"]
-    selectors = [
-        "pixel_id",
-        id_field,
-        "modis_x",
-        "modis_y"
-    ]
-    if config["sample_points"]["include_lonlat"]:
-        selectors.extend(["lon", "lat"])
+    selectors = samplepoint_base_fields(config)
     selectors.extend(
         f"isa_urban_fraction_{year}"
         for year in config["samplepoint_attributes"]["isa_years"]
@@ -66,10 +60,10 @@ def _resolve_isa_band(
     return band_names[0]
 
 
-def prepare_samplepoint_sources(
+def prepare_isa_source(
     config: dict[str, Any]
-) -> SamplePointSources:
-    """Load the selected ISA, GHSL and water raster sources."""
+) -> tuple[ee.Image, str, tuple[int, ...]]:
+    """Load and validate the configured GAIA ISA source."""
     attribute_config = config["samplepoint_attributes"]
     isa_asset = attribute_config["isa_asset"]
     if not isinstance(isa_asset, str) or not isa_asset.strip():
@@ -93,6 +87,15 @@ def prepare_samplepoint_sources(
         attribute_config.get("isa_band")
     )
     isa_image = isa_image.select(isa_band)
+    return isa_image, isa_band, tuple(isa_years)
+
+
+def prepare_samplepoint_sources(
+    config: dict[str, Any]
+) -> SamplePointSources:
+    """Load the selected ISA, GHSL and water raster sources."""
+    attribute_config = config["samplepoint_attributes"]
+    isa_image, isa_band, isa_years = prepare_isa_source(config)
 
     ghsl_config = config["ghsl_built"]
     years = ghsl_config["years"]
@@ -143,7 +146,7 @@ def prepare_samplepoint_sources(
     return SamplePointSources(
         isa_image=isa_image,
         isa_band=isa_band,
-        isa_years=tuple(isa_years),
+        isa_years=isa_years,
         ghsl_image=ghsl_image,
         water_image=water_image
     )
@@ -183,10 +186,15 @@ def _join_by_point_and_city(
     primary: ee.FeatureCollection,
     secondary: ee.FeatureCollection,
     id_field: str,
-    match_property: str
+    match_property: str,
+    outer: bool = False
 ) -> ee.FeatureCollection:
+    join = (
+        ee.Join.saveFirst(match_property, outer=True)
+        if outer else ee.Join.saveFirst(match_property)
+    )
     return ee.FeatureCollection(
-        ee.Join.saveFirst(match_property).apply(
+        join.apply(
             primary=primary,
             secondary=secondary,
             condition=ee.Filter.And(
@@ -224,8 +232,7 @@ def build_samplepoint_attribute_collection(
             "positive integer."
         )
 
-    base_field_count = 6 if config["sample_points"]["include_lonlat"] else 4
-    base_fields = build_samplepoint_selectors(config)[:base_field_count]
+    base_fields = samplepoint_base_fields(config)
     isa_fields = [
         f"isa_urban_fraction_{year}"
         for year in sources.isa_years

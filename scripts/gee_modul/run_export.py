@@ -8,6 +8,8 @@ from export_rural_all_cities_annual import export_rural_all_cities
 from src.samplepoint_attribute_exports import export_samplepoint_attributes
 from src.samplepoint_lst_city_exports import export_samplepoint_lst_city
 from src.samplepoint_lst_spatial_exports import export_samplepoint_lst_spatial
+from src.samplepoint_isa_exports import export_samplepoint_isa
+from src.samplepoint_development_exports import export_samplepoint_development
 from export_samplepoint_lst import export_samplepoint_lst
 from export_samplepoint_lst_month import export_samplepoint_lst_month
 
@@ -19,7 +21,9 @@ EXPORTERS = {
     "samplepoint_lst": export_samplepoint_lst,
     "samplepoint_lst_month": export_samplepoint_lst_month,
     "samplepoint_lst_spatial": export_samplepoint_lst_spatial,
-    "samplepoint_lst_city": export_samplepoint_lst_city
+    "samplepoint_lst_city": export_samplepoint_lst_city,
+    "samplepoint_isa": export_samplepoint_isa,
+    "samplepoint_development": export_samplepoint_development
 }
 
 

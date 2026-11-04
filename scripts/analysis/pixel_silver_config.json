@@ -1,0 +1,20 @@
+{
+  "paths": {
+    "pixel_lst_tar": "../../data/raw/pixel_1700/pixel_lst_parquet_all_v2.tar",
+    "pixel_development_parquet": "../../data/raw/pixel_all_develop/pixel_develop.parquet",
+    "rural_csv_dir": "../../data/raw/pixel_1700/rural_1700",
+    "priority_city_ids_json": "../../data/priority_city_ids_1700.json",
+    "output_dir": "../../data/processed/silver"
+  },
+  "study": {
+    "start_year": 2000,
+    "end_year": 2024,
+    "expected_city_count": 1700
+  },
+  "processing": {
+    "compression": "zstd",
+    "batch_size": 65536,
+    "duckdb_threads": 2,
+    "duckdb_memory_limit": "1GB"
+  }
+}

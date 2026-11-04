@@ -1,4 +1,5 @@
 import csv
+import json
 import sys
 import tempfile
 import unittest
@@ -58,6 +59,61 @@ class SamplepointPriorityTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "no sample points"):
                 priority.filter_priority_sample_points(points, "city", [7, 100])
             make_filter.assert_called_once()
+
+    def test_export_json_count_idempotence_and_no_overwrite(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "cities.csv"
+            output = Path(directory) / "ids.json"
+            self.write_csv(source, ["city"], [
+                {"city": "42"}, {"city": "7"}, {"city": "42"}
+            ])
+            config = {"cities": {
+                "id_field": "city", "priority_city_csv": str(source),
+                "priority_city_ids_json": str(output), "priority_city_expected_count": 2
+            }}
+            path, count, digest, created = priority.export_priority_city_ids_json(config)
+            self.assertEqual((path, count, created), (output.resolve(), 2, True))
+            self.assertEqual(json.loads(output.read_text(encoding="utf-8")), [7, 42])
+            self.assertEqual(priority.export_priority_city_ids_json(config), (path, count, digest, False))
+            output.write_text("[99]\n", encoding="utf-8")
+            with self.assertRaises(FileExistsError):
+                priority.export_priority_city_ids_json(config)
+            self.assertEqual(output.read_text(encoding="utf-8"), "[99]\n")
+            output.write_text("[7.0, 42]\n", encoding="utf-8")
+            with self.assertRaises(FileExistsError):
+                priority.export_priority_city_ids_json(config)
+
+    def test_export_json_rejects_unexpected_count_before_writing(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "cities.csv"
+            output = Path(directory) / "ids.json"
+            self.write_csv(source, ["city"], [{"city": "7"}])
+            config = {"cities": {
+                "id_field": "city", "priority_city_csv": str(source),
+                "priority_city_ids_json": str(output), "priority_city_expected_count": 2
+            }}
+            with self.assertRaisesRegex(ValueError, "Expected 2 priority cities, found 1"):
+                priority.export_priority_city_ids_json(config)
+            self.assertFalse(output.exists())
+
+    def test_load_json_snapshot_validates_ids_and_preserves_digest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "cities.csv"
+            snapshot = root / "ids.json"
+            self.write_csv(source, ["city"], [{"city": "42"}, {"city": "7"}])
+            config = {"cities": {
+                "id_field": "city", "priority_city_csv": str(source),
+                "priority_city_ids_json": str(snapshot), "priority_city_expected_count": 2
+            }}
+            priority.export_priority_city_ids_json(config)
+            ids, digest, path = priority.load_priority_city_ids_json(config)
+            self.assertEqual((ids, path), ([7, 42], snapshot.resolve()))
+            self.assertEqual(digest, priority.load_priority_city_ids(config, "city")[1])
+            for value in ([7, 7], [7, True], [7], ["7", 42]):
+                snapshot.write_text(json.dumps(value), encoding="utf-8")
+                with self.subTest(value=value), self.assertRaises(ValueError):
+                    priority.load_priority_city_ids_json(config)
 
 
 if __name__ == "__main__":

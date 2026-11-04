@@ -3,6 +3,68 @@
 For the complete source-to-analysis workflow and future analysis roadmap, see
 [`../../DATA_PROCESSING_WORKFLOW.md`](../../DATA_PROCESSING_WORKFLOW.md).
 
+## Pixel-level Silver dataset
+
+The city-partitioned pixel workflow is configured separately in
+[`pixel_silver_config.json`](./pixel_silver_config.json). From the repository
+root, run:
+
+```powershell
+python scripts\analysis\build_pixel_silver.py
+```
+
+It reads the configured v2 LST TAR, development Parquet, 25 rural CSVs and
+priority-city ID JSON. It produces:
+
+```text
+data\processed\silver\
+├── pixel_lst\city_id=<ID>\data.parquet
+├── pixel_development\data.parquet
+├── rural_lst\rural_<year>.parquet
+└── manifest.json
+```
+
+One LST file contains all months for one city. The city folder structure is
+preserved, but the TAR is not simply extracted: LST and QC columns are
+strictly converted to consistent numeric types while `pixel_id` remains a
+string, and nulls are retained. The existing development Parquet is validated
+and copied unchanged; rural CSVs are converted with the shared city-LST CSV
+validator. No ISA, water or other scientific fields are corrected or filtered
+by this conversion.
+
+Before publication the workflow checks the 1,700-city list, per-city pixel
+keys, all configured months, development matches, input hashes, numeric
+conversion, output schemas, null counts and DuckDB-readable row counts.
+Invalid inputs fail explicitly. Output is first written to a uniquely named
+staging directory next to `silver`; only a completed build is renamed to
+`silver`. An existing `silver` directory is never overwritten. On failure,
+the printed staging directory remains for inspection; it is not published.
+Raw inputs are never modified.
+
+With Hive partitioning enabled, `city_id` comes from the directory name and
+`ID_UC_G0` remains the data column. Filtering on `city_id` enables city
+partition pruning; queries spanning all cities may touch many small files:
+
+```python
+from pathlib import Path
+import duckdb
+
+pattern = str(Path(r"data\processed\silver\pixel_lst") / "city_id=*" / "data.parquet")
+con = duckdb.connect()
+rows = con.execute(
+    "SELECT * FROM read_parquet(?, hive_partitioning=true) "
+    "WHERE city_id=? AND year=?",
+    [pattern, 5249, 2020]
+).fetchall()
+```
+
+The v2 mean-LST fields are already `float32`; writing them as `float64`
+preserves those stored values but does not restore precision previously lost
+when the v2 inputs were created. The manifest includes source SHA-256 hashes
+and row counts. Data under `data/` is not tracked by Git.
+
+## City-level analysis workflow
+
 The preprocessing pipeline keeps the downloaded CSVs unchanged and creates:
 
 ```text

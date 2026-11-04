@@ -175,6 +175,136 @@ area-weighted fraction from the same GLO30 `WBM` mask as the rural workflow:
 water and valid WBM areas in m². Results use the configured Drive folder and
 dataset name; they do not modify the source point, ISA, GHSL, or DEM assets.
 
+### Full-MODIS-cell ISA-only export
+
+The legacy `samplepoint_attributes` export above retains its original
+valid-GAIA-pixel denominator. The separate `samplepoint_isa_fullcell_v0.4`
+workflow uses the **whole MODIS pixel area** as its denominator instead.
+Before spatial aggregation, each masked GAIA pixel is treated as zero ISA;
+no separate coverage QA is added. This deliberately treats true missing
+data as zero contribution as well as masked non-urban areas, and includes
+water and the portions of a cell outside a city boundary in the denominator.
+The output is the area of classified GAIA ISA pixels, not a sub-pixel
+measurement of impervious cover. The code assumes the documented 0, 2-38
+GAIA class encoding and does not add a per-pixel source-class QA field.
+
+The native annual 0/1 indicators are filled before `reduceResolution` and
+use an area-weighted mean with `bestEffort=False`; no explicit reprojection
+is requested. Each output row retains `pixel_id`, `ID_UC_G0`, `modis_x`,
+`modis_y`, optional `lon`/`lat`, and the 37 annual
+`isa_urban_fraction_YEAR` fields. It contains no GHSL or water columns;
+join it to existing development data on both `pixel_id` and `ID_UC_G0`.
+Do not concatenate the old and new ISA values as interchangeable records.
+
+First evaluate one city's sample points without submitting a Drive task:
+
+```powershell
+python scripts\gee_modul\test_samplepoint_isa_city.py
+```
+
+The script first evaluates a small synthetic grid in Earth Engine: the
+expected 1985/2020/2021 fractions are 0.25/0.5/0.75 for a shifted grid with
+partial overlaps and a masked area, and 0/0/0 for an entirely masked cell.
+It then tests `test.city_id` using `samplepoint_isa_export.test_point_limit`
+points. Set `test_pixel_id` to a specific pixel ID or `null` to select the
+first points sorted by ID. The script checks point preservation, finite
+fractions, range and annual monotonicity. This is a calculation test, not a
+coverage QA filter on exported data.
+
+To submit a **single full-city** Drive export, leave
+`samplepoint_isa_export.selection` as `"test_city"` and run:
+
+```powershell
+python scripts\gee_modul\export_samplepoint_isa.py
+```
+
+After confirming the full-city task, set `selection` to `"batches"` to
+submit city batches using the same sorted IDs and
+`sample_points.city_batch_size` as the original attributes exporter.
+`batch_offset` is zero-based; `max_batches_per_run` limits submissions per
+run. For example, offset 227 selects batch 0228 when the original city list
+and batch size are unchanged. The configured initial maximum is 1. A batch
+can still fail due to spatial extent or `max_pixels_per_cell`; test before
+submitting all batches. Earth Engine determines actual concurrency.
+
+The script appends submitted task IDs, city IDs, batch number/count, source
+assets and a city-list digest to the configured task log. The log does not
+automatically check completion or prevent resubmission. A test-city task
+overlaps the batch containing that city; retain it only as a test or
+deduplicate when combining outputs. If submission stops, check both the log
+and Earth Engine before resuming.
+
+`samplepoint_isa` is also available as a `run_export.py` target. The current
+`export.targets` is not changed by this addition; running the new script
+directly is safer for the single-city test.
+
+### Priority-city full-cell ISA, water and GHSL
+
+The separate `samplepoint_development_fullcell_v0.4` workflow combines
+the new full-cell ISA logic with corrected water areas and the existing GHSL
+mean/count statistics. It targets the 1,700 historical cities from
+`cities.priority_city_ids_json`, validates every requested city against the
+sample-point asset, and submits **one task per city**. The JSON snapshot is
+the same list used for the earlier pixel LST exports; it does not depend on
+the former location of the historical CSV.
+
+The output keeps the original sample-point attribute headers:
+`pixel_id`, city ID, MODIS coordinates, optional longitude/latitude, the 37
+annual ISA fractions, water area/valid area/fraction, and GHSL surface and
+volume mean/count fields for the configured years. There are no additional
+ISA coverage QA columns.
+
+- ISA uses the full MODIS cell as denominator and treats masked GAIA pixels
+  as zero contribution, including genuinely missing data.
+- Water uses an area-weighted full-cell WBM indicator. `water_fraction` is
+  water area divided by the **entire MODIS cell area**; masked WBM contributes
+  zero. `water_area_m2` is that fraction times the MODIS pixel area evaluated
+  on the target grid, and `water_valid_area_m2` separately records valid WBM
+  coverage area. When WBM has no coverage, both areas and the full-cell
+  fraction are 0; this must not be interpreted as proof of no water.
+- GHSL fields retain their legacy meanings: the mean of overlapping valid
+  100 m source-pixel values and the valid-pixel count, not the total built
+  area or volume of a MODIS cell. If GHSL has no match, the point remains in
+  the output with null means and zero counts.
+
+These water and ISA definitions differ from the legacy
+`samplepoint_attributes` results. Do not mix v0.3 and v0.4 records as if
+they had identical semantics, and do not overwrite existing Silver data
+without a separate validated update.
+
+First run the single-city calculation checks:
+
+```powershell
+python scripts\gee_modul\test_samplepoint_development_city.py
+```
+
+The script evaluates synthetic shifted-grid cases in Earth Engine for ISA
+fractions, water fraction/area and WBM coverage, GHSL mean, missing GHSL
+coverage and fully masked WBM. It then validates up to
+`samplepoint_development_export.test_point_limit` points in `test.city_id`;
+set `test_pixel_id` to a specific ID or `null` for the first sorted points.
+This invokes GEE calculations but submits no Drive task.
+
+To submit one full-city Drive test, keep
+`samplepoint_development_export.selection` as `"test_city"` and run:
+
+```powershell
+python scripts\gee_modul\export_samplepoint_development.py
+```
+
+After confirming the test task and output, set `selection` to `"all"`.
+`city_offset` is a zero-based offset into the sorted priority-city list, and
+`max_cities_per_run` limits submissions per invocation. The initial maximum is
+1; setting it to 1,700 requests all cities but does not control Earth Engine
+concurrency. The configured JSONL task log records city/task IDs, source
+assets, list digests and definitions. It does not automatically track
+completion, skip the earlier test city, or prevent duplicate submissions.
+After a partial submission, inspect both the log and Earth Engine before
+resuming. Large cities may still need a separate fallback.
+
+The `samplepoint_development` target is also available in `run_export.py`;
+the current `export.targets` is unchanged.
+
 ## MODIS sample-point monthly LST
 
 The sample-point LST exporter uses the same monthly MODIS composites, QA
@@ -281,6 +411,23 @@ merge overlapping results without deduplication.
 
 The `samplepoint_lst_city` target is also available in `run_export.py`.
 Changing the city-export settings does not change `export.targets`.
+
+To create a local JSON reference of the historical priority city IDs without
+accessing Earth Engine, run:
+
+```bash
+python scripts/gee_modul/export_priority_city_ids_json.py
+```
+
+The script reads `cities.priority_city_csv`, checks the unique ID count
+against `cities.priority_city_expected_count` and writes a sorted integer
+array to `cities.priority_city_ids_json`. Paths are relative to `config.json`
+unless absolute. The default destination is
+`data/priority_city_ids_1700.json`; `data/` is ignored by Git. Repeating the
+script is safe if the existing JSON matches; a different existing file is
+not overwritten. In Colab, load it with `json.load` to obtain the list of
+integer IDs. This is the expected historical city list, not proof that all
+Drive exports are present.
 
 ### Unpartitioned LST exporters and checks
 

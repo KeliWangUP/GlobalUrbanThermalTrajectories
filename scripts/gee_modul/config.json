@@ -35,6 +35,28 @@
     "month": 1
   },
 
+  "samplepoint_isa_export": {
+    "dataset_name": "samplepoint_isa_fullcell",
+    "version": "v0.4",
+    "selection": "test_city",
+    "batch_offset": 0,
+    "max_batches_per_run": 1,
+    "test_point_limit": 5,
+    "test_pixel_id": null,
+    "task_log": "samplepoint_isa_fullcell_task_log.jsonl"
+  },
+
+  "samplepoint_development_export": {
+    "dataset_name": "samplepoint_development_fullcell",
+    "version": "v0.4",
+    "selection": "test_city",
+    "city_offset": 0,
+    "max_cities_per_run": 1,
+    "test_point_limit": 5,
+    "test_pixel_id": null,
+    "task_log": "samplepoint_development_fullcell_task_log.jsonl"
+  },
+
   "samplepoint_lst_spatial_export": {
     "tile_pixels": 640,
     "city_scope": "priority",
@@ -64,6 +86,8 @@
     "id_field": "ID_UC_G0",
     "boundary_definition": "fixed_2024",
     "priority_city_csv": "../../data/rural_1700/rural_lst_over_300k_v0.3_2020.csv",
+    "priority_city_ids_json": "../../data/priority_city_ids_1700.json",
+    "priority_city_expected_count": 1700,
     "priority_points_asset": "projects/ee-keliwang/assets/cities_over_300k"
   },
 

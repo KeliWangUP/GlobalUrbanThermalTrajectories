@@ -8,7 +8,12 @@ from src.samplepoint_attributes import (
     build_samplepoint_selectors,
     prepare_samplepoint_sources
 )
-from src.samplepoint_utils import load_sample_points
+from src.samplepoint_utils import (
+    get_samplepoint_city_ids,
+    load_sample_points,
+    partition_samplepoint_cities,
+    samplepoint_base_fields
+)
 
 
 def export_samplepoint_attributes(
@@ -26,31 +31,12 @@ def export_samplepoint_attributes(
     point_asset = export_config["asset_root"]
     id_field = config["cities"]["id_field"]
     required_fields = build_samplepoint_selectors(config)
-    base_fields = [
-        "pixel_id",
-        id_field,
-        "modis_x",
-        "modis_y"
-    ]
-    if config["sample_points"]["include_lonlat"]:
-        base_fields.extend(["lon", "lat"])
+    base_fields = samplepoint_base_fields(config)
     points, point_count = load_sample_points(config, base_fields)
 
-    city_ids = points.aggregate_array(id_field).distinct().sort().getInfo()
-    if not city_ids or any(city_id is None for city_id in city_ids):
-        raise ValueError(
-            "Sample-point asset has no valid city IDs in "
-            f"'{id_field}'."
-        )
+    city_ids = get_samplepoint_city_ids(points, id_field)
     city_batch_size = config["sample_points"]["city_batch_size"]
-    if (
-        isinstance(city_batch_size, bool)
-        or not isinstance(city_batch_size, int)
-        or city_batch_size < 1
-    ):
-        raise ValueError(
-            "sample_points.city_batch_size must be a positive integer."
-        )
+    city_batches = partition_samplepoint_cities(city_ids, city_batch_size)
 
     sources = prepare_samplepoint_sources(config)
     print(
@@ -63,9 +49,7 @@ def export_samplepoint_attributes(
     version = config["project"]["version"]
     folder = export_config["folder"]
     tasks = []
-    batch_count = (
-        len(city_ids) + city_batch_size - 1
-    ) // city_batch_size
+    batch_count = len(city_batches)
     if (
         selected_city_id is not None
         and selected_city_ids is not None
@@ -129,22 +113,12 @@ def export_samplepoint_attributes(
     elif selected_city_ids is not None:
         batch_specs = [(None, [city_id]) for city_id in selected_city_ids]
     elif selected_batch_index is not None:
-        start = (selected_batch_index - 1) * city_batch_size
         batch_specs = [(
             selected_batch_index,
-            city_ids[start:start + city_batch_size]
+            city_batches[selected_batch_index - 1]
         )]
     else:
-        batch_specs = [
-            (
-                batch_index,
-                city_ids[start:start + city_batch_size]
-            )
-            for batch_index, start in enumerate(
-                range(0, len(city_ids), city_batch_size),
-                start=1
-            )
-        ]
+        batch_specs = list(enumerate(city_batches, start=1))
 
     for batch_index, batch_city_ids in batch_specs:
         batch_points = points.filter(

@@ -171,6 +171,30 @@ python scripts/gee_modul/export_rural_all_cities_annual.py
 或全部有样点城市；当前默认只提交 `test.city_id` 对应的单城市测试。逐城市和
 空间网格结果可能重叠，合并时需去重。
 
+### 3.5 全 MODIS 像元 ISA 占比
+
+新增独立的 ISA-only 入口
+[`export_samplepoint_isa.py`](./scripts/gee_modul/export_samplepoint_isa.py)
+和单城市检查
+[`test_samplepoint_isa_city.py`](./scripts/gee_modul/test_samplepoint_isa_city.py)。
+新口径将被掩膜的 GAIA 区域视作 ISA 零贡献，以整个 MODIS 像元面积为
+分母；真正无数据也因此按零贡献处理，不附加覆盖率 QA。先运行合成网格和
+单城市检查，再测试单城市导出及批次。新任务名使用独立数据集名与版本，
+不覆盖旧 ISA、GHSL、水体或 LST 数据；与发展表关联使用城市 ID 和 pixel ID。
+批次设置和重试注意事项见
+[`scripts/gee_modul/README.md`](./scripts/gee_modul/README.md)。
+
+### 3.6 优先城市发展属性新版本
+
+优先城市的独立入口
+[`export_samplepoint_development.py`](./scripts/gee_modul/export_samplepoint_development.py)
+使用历史 1,700 城市 ID，按城市提交任务。ISA 与水体比例均以整个 MODIS
+像元为分母，masked 数据按零贡献；水体有效覆盖面积单独保留。GHSL 仍导出
+100 m 源像元均值及有效数量，而不是 MODIS 像元建筑总量。
+单城市检查和 GEE 导出尚需运行验证；字段名虽保持原样，ISA 和水体口径已
+改变，不能与旧版混用。具体测试和批量设置见
+[`scripts/gee_modul/README.md`](./scripts/gee_modul/README.md)。
+
 ## 4. 本地数据层级
 
 ```text
@@ -195,6 +219,14 @@ data/
 [`scripts/analysis/config.json`](./scripts/analysis/config.json) 统一控制；
 相对路径以该配置文件所在目录为基准。原始 CSV 是输入档案，不由处理脚本覆盖。
 历史优先城市原始数据与当前全量乡村数据分开保存。
+
+像素级 Bronze → Silver 使用独立入口
+[`build_pixel_silver.py`](./scripts/analysis/build_pixel_silver.py) 和配置
+[`pixel_silver_config.json`](./scripts/analysis/pixel_silver_config.json)。
+LST 保留一城一个 Parquet 的目录结构，统一数值类型并校验样点、年月和发展数据
+关联；发展 Parquet 保留原值，乡村年度 CSV 转为 Parquet。完整输入和输出校验
+通过后才发布到 `data/processed/silver`，已有目录不会被覆盖。详细运行与 DuckDB
+查询方式见 [`scripts/analysis/README.md`](./scripts/analysis/README.md)。
 
 ## 5. 分析预处理
 
