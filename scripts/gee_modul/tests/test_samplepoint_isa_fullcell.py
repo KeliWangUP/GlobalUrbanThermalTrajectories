@@ -82,40 +82,31 @@ class SamplepointFullCellISATests(unittest.TestCase):
             {1985: 0.25, 2020: 0.5, 2021: 0.75}
         )
 
-    def test_masked_annual_indicators_become_area_numerators(self):
+    def test_masked_annual_indicators_become_fraction_bands(self):
         source = MagicMock()
         indicators = [MagicMock(), MagicMock(), MagicMock()]
         source.gte.side_effect = indicators
-        pixel_area = MagicMock()
-        source_pixel_area = pixel_area.setDefaultProjection.return_value
-        product_images = [MagicMock(), MagicMock(), MagicMock()]
-        source_pixel_area.multiply.side_effect = product_images
         with (
             patch.object(isa.ee, "Image") as image,
         ):
-            image.pixelArea.return_value = pixel_area
             image.cat.return_value = "area-image"
             result = isa.build_fullcell_isa_image(
                 source, (1985, 2020, 2021), 4096
             )
         self.assertEqual(source.gte.call_args_list, [call(38), call(3), call(2)])
         self.assertEqual(source.lte.call_args_list, [call(38), call(38), call(38)])
-        pixel_area.setDefaultProjection.assert_called_once_with(
-            source.projection.return_value
-        )
         for indicator, year in zip(indicators, (1985, 2020, 2021)):
             indicator.And.assert_called_once()
             indicator.And.return_value.unmask.assert_called_once_with(
                 0, sameFootprint=False
             )
-        self.assertEqual(source_pixel_area.multiply.call_args_list, [
-            call(indicator.And.return_value.unmask.return_value)
+            indicator.And.return_value.unmask.return_value.rename.assert_called_once_with(
+                f"isa_urban_fraction_{year}"
+            )
+        image.cat.assert_called_once_with([
+            indicator.And.return_value.unmask.return_value.rename.return_value
             for indicator in indicators
         ])
-        for product, year in zip(product_images, (1985, 2020, 2021)):
-            product.rename.assert_called_once_with(
-                f"isa_area_m2_{year}"
-            )
         self.assertEqual(result, "area-image")
 
     def test_fraction_reference_cases_and_invalid_inputs(self):

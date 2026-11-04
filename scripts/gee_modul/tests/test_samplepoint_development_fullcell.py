@@ -72,45 +72,30 @@ class SamplepointFullCellDevelopmentTests(unittest.TestCase):
                 water_area += 900 if water and valid else 0
         self.assertEqual((water_area, valid_area, water_area / 3600), (900, 2700, 0.25))
 
-    def test_water_builds_area_numerators_and_independent_coverage(self):
+    def test_water_builds_fraction_bands_and_independent_coverage(self):
         water = MagicMock()
-        pixel_area = MagicMock()
-        source_pixel_area = pixel_area.setDefaultProjection.return_value
-        masked_water_area = MagicMock()
-        masked_valid_area = MagicMock()
-        water_area = MagicMock()
-        valid_area = MagicMock()
-        source_pixel_area.updateMask.side_effect = [
-            masked_water_area,
-            masked_valid_area
-        ]
-        masked_water_area.unmask.return_value.rename.return_value = water_area
-        masked_valid_area.unmask.return_value.rename.return_value = valid_area
+        water_fraction = MagicMock()
+        valid_fraction = MagicMock()
+        water.unmask.return_value.rename.return_value = water_fraction
+        water.mask.return_value.gt.return_value.unmask.return_value.rename.return_value = valid_fraction
         with (
             patch.object(development.ee, "Image") as image,
         ):
-            image.pixelArea.return_value = pixel_area
             image.cat.return_value = "area-image"
             result = development.build_fullcell_water_image(water)
-        pixel_area.setDefaultProjection.assert_called_once_with(
-            water.projection.return_value
+        water.unmask.assert_called_once_with(0, sameFootprint=False)
+        water.unmask.return_value.rename.assert_called_once_with(
+            "water_fraction"
         )
-        source_pixel_area.updateMask.assert_has_calls([
-            call(water),
-            call(water.mask.return_value)
-        ])
-        masked_water_area.unmask.assert_called_once_with(0)
-        masked_water_area.unmask.return_value.rename.assert_called_once_with(
-            "water_area_num_m2"
+        water.mask.assert_called_once_with()
+        water.mask.return_value.gt.assert_called_once_with(0)
+        water.mask.return_value.gt.return_value.unmask.assert_called_once_with(
+            0, sameFootprint=False
         )
-        masked_valid_area.unmask.assert_called_once_with(0)
-        masked_valid_area.unmask.return_value.rename.assert_called_once_with(
-            "water_valid_area_num_m2"
+        water.mask.return_value.gt.return_value.unmask.return_value.rename.assert_called_once_with(
+            "water_valid_fraction"
         )
-        image.cat.assert_called_once_with([
-            water_area,
-            valid_area
-        ])
+        image.cat.assert_called_once_with([water_fraction, valid_fraction])
         self.assertEqual(result, "area-image")
 
     def test_legacy_and_outer_join_keep_their_distinct_modes(self):

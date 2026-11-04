@@ -188,13 +188,13 @@ The output is the area of classified GAIA ISA pixels, not a sub-pixel
 measurement of impervious cover. The code assumes the documented 0, 2-38
 GAIA class encoding and does not add a per-pixel source-class QA field.
 
-The native annual 0/1 indicators are converted to area bands, with masked
-source pixels contributing zero. The area bands are aggregated with the
-existing `reduceResolution` path and sampled at each MODIS point. MODIS
-`pixelArea` is sampled separately at those same points using the same reference
-projection and scale; each annual area numerator is divided by that sampled
-pixel area. Source-pixel areas use the ISA/WBM source projection before
-aggregation. No per-point cell geometry or geometry-area operation is needed.
+The native annual 0/1 indicators are aggregated with a weighted mean to obtain
+each indicator's area fraction in the MODIS cell; masked source pixels
+contribute zero. The fraction is sampled at each MODIS point and multiplied
+by the MODIS pixel area sampled on the same reference projection and scale to
+produce an area in square metres. This avoids treating a weighted reducer sum
+of source-pixel areas as a total area. No per-point cell geometry or
+geometry-area operation is needed.
 Each output row retains
 `pixel_id`, `ID_UC_G0`, `modis_x`,
 `modis_y`, optional `lon`/`lat`, and annual
@@ -261,13 +261,13 @@ surface and volume mean/count fields for the configured years. There are no
 additional ISA coverage QA columns.
 
 - ISA uses the full MODIS cell as denominator and treats masked GAIA pixels
-  as zero contribution, including genuinely missing data. Urban area bands
-  are aggregated with `reduceResolution` and sampled at MODIS points.
+  as zero contribution, including genuinely missing data. Annual binary
+  indicators are reduced to weighted area fractions and multiplied by the
+  MODIS cell area.
 - Water area and valid WBM coverage area use the same
-  `reduceResolution`/point-sampling path. `water_fraction` is water area
-  divided by the **entire MODIS cell area**, sampled independently from
-  `pixelArea` on the same MODIS grid; masked WBM contributes zero. When WBM
-  has no coverage, both areas and the full-cell
+  weighted-fraction/point-sampling path. `water_fraction` is the weighted
+  WBM water fraction multiplied by the **entire MODIS cell area**; masked WBM
+  contributes zero. When WBM has no coverage, both areas and the full-cell
   fraction are 0; this must not be interpreted as proof of no water.
 - GHSL fields retain their legacy meanings: the mean of overlapping valid
   100 m source-pixel values and the valid-pixel count, aggregated with

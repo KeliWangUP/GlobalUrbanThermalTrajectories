@@ -3,6 +3,7 @@ from typing import Any
 
 import ee
 
+from src.samplepoint_grid import sample_modis_pixel_area
 from src.samplepoint_utils import samplepoint_base_fields
 
 
@@ -263,21 +264,18 @@ def build_samplepoint_attribute_collection(
         fill_value=-1
     )
 
-    pixel_area = ee.Image.pixelArea().setDefaultProjection(
-        sources.water_image.projection()
-    )
-    water_area_image = ee.Image.cat([
-        pixel_area.updateMask(sources.water_image)
-        .unmask(0)
-        .rename("water_area_m2"),
-        pixel_area.updateMask(
-            sources.water_image.mask()
-        ).unmask(0)
-        .rename("water_valid_area_m2")
+    water_fraction_image = ee.Image.cat([
+        sources.water_image.unmask(
+            0, sameFootprint=False
+        ).rename("water_fraction"),
+        sources.water_image.mask()
+        .gt(0)
+        .unmask(0, sameFootprint=False)
+        .rename("water_valid_fraction")
     ])
     water_stats = _sample_modis_grid_image(
-        image=water_area_image,
-        reducer=ee.Reducer.sum(),
+        image=water_fraction_image,
+        reducer=ee.Reducer.mean(),
         points=points,
         properties=base_fields,
         projection=projection,
@@ -285,6 +283,9 @@ def build_samplepoint_attribute_collection(
         max_pixels=max_pixels,
         tile_scale=tile_scale,
         fill_value=0
+    )
+    modis_area_stats = sample_modis_pixel_area(
+        points, base_fields, projection, modis_scale, tile_scale
     )
     ghsl_reducer = (
         ee.Reducer.mean()
@@ -311,8 +312,14 @@ def build_samplepoint_attribute_collection(
         id_field=id_field,
         match_property="_water_stats"
     )
-    joined = _join_by_point_and_city(
+    isa_water_modis = _join_by_point_and_city(
         primary=isa_water,
+        secondary=modis_area_stats,
+        id_field=id_field,
+        match_property="_modis_area"
+    )
+    joined = _join_by_point_and_city(
+        primary=isa_water_modis,
         secondary=ghsl_stats,
         id_field=id_field,
         match_property="_ghsl_stats"
@@ -332,15 +339,19 @@ def build_samplepoint_attribute_collection(
         water_stats_dictionary = ee.Dictionary(
             water_feature.toDictionary()
         )
-        water_area = ee.Number(
-            water_stats_dictionary.get("water_area_m2", 0)
+        water_fraction = ee.Number(
+            water_stats_dictionary.get("water_fraction", 0)
         )
-        water_valid_area = ee.Number(
-            water_stats_dictionary.get("water_valid_area_m2", 0)
+        valid_fraction = ee.Number(
+            water_stats_dictionary.get("water_valid_fraction", 0)
         )
+        area_feature = ee.Feature(feature.get("_modis_area"))
+        cell_area = ee.Number(area_feature.get("modis_area_m2"))
+        water_area = water_fraction.multiply(cell_area)
+        water_valid_area = valid_fraction.multiply(cell_area)
         water_fraction = ee.Algorithms.If(
-            water_valid_area.gt(0),
-            water_area.divide(water_valid_area),
+            valid_fraction.gt(0),
+            water_fraction.divide(valid_fraction),
             None
         )
         water_properties = ee.Dictionary({

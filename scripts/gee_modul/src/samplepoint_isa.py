@@ -30,7 +30,7 @@ def build_fullcell_isa_image(
     years: tuple[int, ...],
     max_pixels: int
 ) -> ee.Image:
-    """Build annual urban-area numerator bands for MODIS-cell reductions."""
+    """Build annual urban indicators for weighted MODIS-cell fractions."""
     if (
         not years
         or any(type(year) is not int or not 1985 <= year <= 2021 for year in years)
@@ -38,37 +38,32 @@ def build_fullcell_isa_image(
     ):
         raise ValueError("ISA years must be unique, increasing and within 1985-2021.")
     validate_max_pixels(max_pixels)
-    pixel_area = ee.Image.pixelArea().setDefaultProjection(
-        isa_image.projection()
-    )
     bands = [
-        pixel_area.multiply(
-            isa_image.gte(2023 - year)
-            .And(isa_image.lte(38))
-            .unmask(0, sameFootprint=False)
-        )
-        .rename(f"isa_area_m2_{year}")
+        isa_image.gte(2023 - year)
+        .And(isa_image.lte(38))
+        .unmask(0, sameFootprint=False)
+        .rename(f"isa_urban_fraction_{year}")
         for year in years
     ]
     return ee.Image.cat(bands)
 
 
 def sample_fullcell_isa(
-    area_image: ee.Image,
+    fraction_image: ee.Image,
     points: ee.FeatureCollection,
     config: dict[str, Any],
     projection: ee.Projection,
     scale: float,
     years: tuple[int, ...]
 ) -> ee.FeatureCollection:
-    """Reduce urban area per MODIS cell and return area and fraction fields."""
+    """Aggregate annual indicators and return urban area and fraction fields."""
     base_fields = samplepoint_base_fields(config)
     id_field = config["cities"]["id_field"]
     max_pixels = config["samplepoint_attributes"]["max_pixels_per_cell"]
     tile_scale = config["processing"]["tile_scale"]
-    areas = _sample_modis_grid_image(
-        image=area_image,
-        reducer=ee.Reducer.sum(),
+    fractions = _sample_modis_grid_image(
+        image=fraction_image,
+        reducer=ee.Reducer.mean(),
         points=points,
         properties=base_fields,
         projection=projection,
@@ -81,7 +76,7 @@ def sample_fullcell_isa(
         points, base_fields, projection, scale, tile_scale
     )
     joined = _join_by_point_and_city(
-        primary=areas,
+        primary=fractions,
         secondary=modis_areas,
         id_field=id_field,
         match_property="_modis_area"
@@ -93,9 +88,10 @@ def sample_fullcell_isa(
         cell_area = ee.Number(area_feature.get("modis_area_m2"))
         isa_properties = {}
         for year in years:
-            area = ee.Number(feature.get(f"isa_area_m2_{year}"))
+            fraction = ee.Number(feature.get(f"isa_urban_fraction_{year}"))
+            area = fraction.multiply(cell_area)
             isa_properties[f"isa_urban_area_m2_{year}"] = area
-            isa_properties[f"isa_urban_fraction_{year}"] = area.divide(cell_area)
+            isa_properties[f"isa_urban_fraction_{year}"] = fraction
         properties = (
             ee.Dictionary(feature.toDictionary(base_fields))
             .combine(ee.Dictionary(isa_properties), overwrite=True)
