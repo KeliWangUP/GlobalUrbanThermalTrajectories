@@ -29,13 +29,13 @@ def build_fullcell_water_image(water_image: ee.Image) -> ee.Image:
     water_area = (
         water_image.unmask(0, sameFootprint=False)
         .multiply(pixel_area)
-        .rename("_water_area_m2")
+        .rename("water_area_num_m2")
     )
     valid_area = (
         water_image.mask().gt(0)
         .unmask(0, sameFootprint=False)
         .multiply(pixel_area)
-        .rename("_water_valid_area_m2")
+        .rename("water_valid_area_num_m2")
     )
     return ee.Image.cat([water_area, valid_area])
 
@@ -102,17 +102,17 @@ def sample_fullcell_development(
         cell_area = ee.Number(feature.get("_modis_area_m2"))
         isa_properties = ee.Dictionary({
             f"isa_urban_fraction_{year}": (
-                ee.Number(feature.get(f"_isa_area_{year}")).divide(cell_area)
+                ee.Number(feature.get(f"isa_area_m2_{year}")).divide(cell_area)
             )
             for year in images.isa_years
         })
         water_feature = ee.Feature(feature.get("_water_stats"))
         water_properties = ee.Dictionary(water_feature.toDictionary([
-            "_water_area_m2",
-            "_water_valid_area_m2"
+            "water_area_num_m2",
+            "water_valid_area_num_m2"
         ]))
-        water_area = ee.Number(water_properties.get("_water_area_m2", 0))
-        valid_area = ee.Number(water_properties.get("_water_valid_area_m2", 0))
+        water_area = ee.Number(water_properties.get("water_area_num_m2", 0))
+        valid_area = ee.Number(water_properties.get("water_valid_area_num_m2", 0))
         water_output = ee.Dictionary({
             "water_area_m2": water_area,
             "water_valid_area_m2": valid_area,

@@ -106,7 +106,7 @@ class SamplepointFullCellISATests(unittest.TestCase):
                 pixel_area
             )
             indicator.And.return_value.unmask.return_value.multiply.return_value.rename.assert_called_once_with(
-                f"_isa_area_{year}"
+                f"isa_area_m2_{year}"
             )
         self.assertEqual(result, "area-image")
 

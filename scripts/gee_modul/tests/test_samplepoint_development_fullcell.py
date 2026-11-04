@@ -85,7 +85,7 @@ class SamplepointFullCellDevelopmentTests(unittest.TestCase):
         water.unmask.assert_called_once_with(0, sameFootprint=False)
         water.unmask.return_value.multiply.assert_called_once_with(pixel_area)
         water.unmask.return_value.multiply.return_value.rename.assert_called_once_with(
-            "_water_area_m2"
+            "water_area_num_m2"
         )
         water.mask.return_value.gt.assert_called_once_with(0)
         water.mask.return_value.gt.return_value.unmask.assert_called_once_with(
@@ -95,7 +95,7 @@ class SamplepointFullCellDevelopmentTests(unittest.TestCase):
             pixel_area
         )
         water.mask.return_value.gt.return_value.unmask.return_value.multiply.return_value.rename.assert_called_once_with(
-            "_water_valid_area_m2"
+            "water_valid_area_num_m2"
         )
         image.cat.assert_called_once_with([
             water_area,

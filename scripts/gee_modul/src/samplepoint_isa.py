@@ -39,7 +39,7 @@ def build_fullcell_isa_image(
         .And(isa_image.lte(38))
         .unmask(0, sameFootprint=False)
         .multiply(ee.Image.pixelArea())
-        .rename(f"_isa_area_{year}")
+        .rename(f"isa_area_m2_{year}")
         for year in years
     ]
     return ee.Image.cat(bands)
@@ -70,7 +70,7 @@ def sample_fullcell_isa(
         cell_area = ee.Number(feature.get("_modis_area_m2"))
         fractions = ee.Dictionary({
             f"isa_urban_fraction_{year}": (
-                ee.Number(feature.get(f"_isa_area_{year}")).divide(cell_area)
+                ee.Number(feature.get(f"isa_area_m2_{year}")).divide(cell_area)
             )
             for year in years
         })
