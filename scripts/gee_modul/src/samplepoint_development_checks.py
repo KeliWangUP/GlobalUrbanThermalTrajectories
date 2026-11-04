@@ -42,12 +42,28 @@ def _validate_development_values(
     location: str
 ) -> None:
     _validate_fractions(properties, isa_years, location)
-    water_area = _finite_number(properties, "water_area_m2", location)
-    valid_area = _finite_number(properties, "water_valid_area_m2", location)
-    fraction = _finite_number(properties, "water_fraction", location)
     if not math.isfinite(cell_area) or cell_area <= 0:
         raise ValueError(f"{location}: invalid MODIS cell area: {cell_area}.")
     tolerance = max(1e-4, cell_area * 1e-6)
+    for year in isa_years:
+        area = _finite_number(
+            properties, f"isa_urban_area_m2_{year}", location
+        )
+        fraction = _finite_number(
+            properties, f"isa_urban_fraction_{year}", location
+        )
+        if (
+            area < -tolerance
+            or area > cell_area + tolerance
+            or abs(area - fraction * cell_area) > tolerance
+        ):
+            raise ValueError(
+                f"{location}: inconsistent ISA area/fraction for {year}: "
+                f"area={area}, fraction={fraction}, cell={cell_area}."
+            )
+    water_area = _finite_number(properties, "water_area_m2", location)
+    valid_area = _finite_number(properties, "water_valid_area_m2", location)
+    fraction = _finite_number(properties, "water_fraction", location)
     if (
         not -1e-6 <= fraction <= 1 + 1e-6
         or water_area < -tolerance
@@ -242,7 +258,9 @@ def check_samplepoint_development_city(
             areas[name], f"Pixel {name}"
         )
         print(
-            f"[RESULT] pixel={name}; ISA_2021={properties['isa_urban_fraction_2021']}; "
+            f"[RESULT] pixel={name}; "
+            f"ISA_2021_area_m2={properties['isa_urban_area_m2_2021']}; "
+            f"ISA_2021_fraction={properties['isa_urban_fraction_2021']}; "
             f"water_fraction={properties['water_fraction']}; "
             f"water_area_m2={properties['water_area_m2']}; "
             f"valid_water_area_m2={properties['water_valid_area_m2']}; "

@@ -149,13 +149,19 @@ class SamplepointFullCellISATests(unittest.TestCase):
             fields = isa.build_samplepoint_isa_selectors(config, (1985, 2021))
             self.assertEqual(fields, [
                 "pixel_id", "city", "modis_x", "modis_y", "lon", "lat",
+                "isa_urban_area_m2_1985", "isa_urban_area_m2_2021",
                 "isa_urban_fraction_1985", "isa_urban_fraction_2021"
             ])
             config["sample_points"]["include_lonlat"] = False
-            self.assertNotIn("lon", isa.build_samplepoint_isa_selectors(config, (2021,)))
+            one_year = isa.build_samplepoint_isa_selectors(config, (2021,))
+            self.assertNotIn("lon", one_year)
+            self.assertEqual(one_year[-2:], [
+                "isa_urban_area_m2_2021", "isa_urban_fraction_2021"
+            ])
             full = isa.build_samplepoint_isa_selectors(config, tuple(range(1985, 2022)))
-            self.assertEqual(len(full), 41)
-            self.assertEqual(full[4], "isa_urban_fraction_1985")
+            self.assertEqual(len(full), 78)
+            self.assertEqual(full[4], "isa_urban_area_m2_1985")
+            self.assertEqual(full[41], "isa_urban_fraction_1985")
             self.assertEqual(full[-1], "isa_urban_fraction_2021")
             self.assertEqual(
                 partition_samplepoint_cities([10, 20, 30, 40, 50], 2),

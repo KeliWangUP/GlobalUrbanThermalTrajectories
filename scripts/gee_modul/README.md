@@ -197,8 +197,9 @@ pixel area. Source-pixel areas use the ISA/WBM source projection before
 aggregation. No per-point cell geometry or geometry-area operation is needed.
 Each output row retains
 `pixel_id`, `ID_UC_G0`, `modis_x`,
-`modis_y`, optional `lon`/`lat`, and the 37 annual
-`isa_urban_fraction_YEAR` fields. It contains no GHSL or water columns;
+`modis_y`, optional `lon`/`lat`, and annual
+`isa_urban_area_m2_YEAR` and `isa_urban_fraction_YEAR` fields. It contains no
+GHSL or water columns;
 join it to existing development data on both `pixel_id` and `ID_UC_G0`.
 Do not concatenate the old and new ISA values as interchangeable records.
 
@@ -252,11 +253,12 @@ sample-point asset, and submits **one task per city**. The JSON snapshot is
 the same list used for the earlier pixel LST exports; it does not depend on
 the former location of the historical CSV.
 
-The output keeps the original sample-point attribute headers:
+The output keeps the original sample-point attribute headers and adds
+`isa_urban_area_m2_YEAR` alongside each annual ISA fraction:
 `pixel_id`, city ID, MODIS coordinates, optional longitude/latitude, the 37
-annual ISA fractions, water area/valid area/fraction, and GHSL surface and
-volume mean/count fields for the configured years. There are no additional
-ISA coverage QA columns.
+annual ISA area/fraction pairs, water area/valid area/fraction, and GHSL
+surface and volume mean/count fields for the configured years. There are no
+additional ISA coverage QA columns.
 
 - ISA uses the full MODIS cell as denominator and treats masked GAIA pixels
   as zero contribution, including genuinely missing data. Urban area bands

@@ -18,6 +18,7 @@ def build_samplepoint_isa_selectors(
     years: tuple[int, ...]
 ) -> list[str]:
     fields = samplepoint_base_fields(config)
+    fields.extend(f"isa_urban_area_m2_{year}" for year in years)
     fields.extend(f"isa_urban_fraction_{year}" for year in years)
     if len(fields) != len(set(fields)):
         raise ValueError("Sample-point ISA selectors contain duplicates.")
@@ -60,7 +61,7 @@ def sample_fullcell_isa(
     scale: float,
     years: tuple[int, ...]
 ) -> ee.FeatureCollection:
-    """Reduce urban area within each MODIS cell and return cell fractions."""
+    """Reduce urban area per MODIS cell and return area and fraction fields."""
     base_fields = samplepoint_base_fields(config)
     id_field = config["cities"]["id_field"]
     max_pixels = config["samplepoint_attributes"]["max_pixels_per_cell"]
@@ -90,15 +91,14 @@ def sample_fullcell_isa(
         feature = ee.Feature(feature)
         area_feature = ee.Feature(feature.get("_modis_area"))
         cell_area = ee.Number(area_feature.get("modis_area_m2"))
-        fractions = ee.Dictionary({
-            f"isa_urban_fraction_{year}": (
-                ee.Number(feature.get(f"isa_area_m2_{year}")).divide(cell_area)
-            )
-            for year in years
-        })
+        isa_properties = {}
+        for year in years:
+            area = ee.Number(feature.get(f"isa_area_m2_{year}"))
+            isa_properties[f"isa_urban_area_m2_{year}"] = area
+            isa_properties[f"isa_urban_fraction_{year}"] = area.divide(cell_area)
         properties = (
             ee.Dictionary(feature.toDictionary(base_fields))
-            .combine(fractions, overwrite=True)
+            .combine(ee.Dictionary(isa_properties), overwrite=True)
         )
         return ee.Feature(None, properties)
 

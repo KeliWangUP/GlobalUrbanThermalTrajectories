@@ -45,6 +45,9 @@ def make_config(path: Path) -> dict:
 
 def example_properties() -> dict:
     return {
+        "isa_urban_area_m2_1985": 900.0,
+        "isa_urban_area_m2_2020": 1800.0,
+        "isa_urban_area_m2_2021": 2700.0,
         "isa_urban_fraction_1985": 0.25,
         "isa_urban_fraction_2020": 0.5,
         "isa_urban_fraction_2021": 0.75,
@@ -182,7 +185,8 @@ class SamplepointFullCellDevelopmentTests(unittest.TestCase):
                     submitted[0]["description"],
                     "samplepoint_development_fullcell_v0.4_priority_aaaaaaaaaaaa_city_20"
                 )
-                self.assertEqual(len(submitted[0]["selectors"]), 66)
+                self.assertEqual(len(submitted[0]["selectors"]), 103)
+                self.assertIn("isa_urban_area_m2_2021", submitted[0]["selectors"])
                 record = json.loads(log.read_text(encoding="utf-8"))
                 self.assertEqual((record["city_id"], record["city_offset"]), (20, 1))
                 self.assertEqual(record["water_denominator"], "full_modis_cell_masked_as_zero")

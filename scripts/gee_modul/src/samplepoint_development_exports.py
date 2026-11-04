@@ -7,8 +7,9 @@ from typing import Any
 import ee
 
 from src.export_utils import CONFIG_PATH, export_table_to_drive
-from src.samplepoint_attributes import build_samplepoint_selectors, prepare_samplepoint_sources
+from src.samplepoint_attributes import prepare_samplepoint_sources
 from src.samplepoint_development import (
+    build_fullcell_development_selectors,
     prepare_fullcell_development_images,
     sample_fullcell_development
 )
@@ -75,7 +76,7 @@ def export_samplepoint_development(
 
     sources = prepare_samplepoint_sources(config)
     images = prepare_fullcell_development_images(config, sources)
-    selectors = build_samplepoint_selectors(config)
+    selectors = build_fullcell_development_selectors(config)
     print(
         f"[INFO] Priority scope: {len(city_ids)} cities; {priority_count} of "
         f"{all_count} points; city list SHA-256={priority_hash}; source={priority_path}."

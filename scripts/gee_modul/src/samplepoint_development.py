@@ -5,6 +5,7 @@ import ee
 
 from src.samplepoint_attributes import (
     SamplePointSources,
+    build_samplepoint_selectors,
     _join_by_point_and_city,
     _sample_modis_grid_image
 )
@@ -19,6 +20,16 @@ class FullCellDevelopmentImages:
     water_area_image: ee.Image
     ghsl_image: ee.Image
     isa_years: tuple[int, ...]
+
+
+def build_fullcell_development_selectors(config: dict[str, Any]) -> list[str]:
+    """Include annual ISA areas alongside the legacy fraction fields."""
+    selectors = build_samplepoint_selectors(config)
+    base_count = len(samplepoint_base_fields(config))
+    isa_years = config["samplepoint_attributes"]["isa_years"]
+    insert_at = base_count + len(isa_years)
+    area_fields = [f"isa_urban_area_m2_{year}" for year in isa_years]
+    return selectors[:insert_at] + area_fields + selectors[insert_at:]
 
 
 def build_fullcell_water_image(water_image: ee.Image) -> ee.Image:
@@ -130,12 +141,11 @@ def sample_fullcell_development(
         feature = ee.Feature(feature)
         area_feature = ee.Feature(feature.get("_modis_area"))
         cell_area = ee.Number(area_feature.get("modis_area_m2"))
-        isa_properties = ee.Dictionary({
-            f"isa_urban_fraction_{year}": (
-                ee.Number(feature.get(f"isa_area_m2_{year}")).divide(cell_area)
-            )
-            for year in images.isa_years
-        })
+        isa_properties: dict[str, Any] = {}
+        for year in images.isa_years:
+            area = ee.Number(feature.get(f"isa_area_m2_{year}"))
+            isa_properties[f"isa_urban_area_m2_{year}"] = area
+            isa_properties[f"isa_urban_fraction_{year}"] = area.divide(cell_area)
         water_feature = ee.Feature(feature.get("_water_stats"))
         water_properties = ee.Dictionary(water_feature.toDictionary([
             "water_area_num_m2",
@@ -168,7 +178,7 @@ def sample_fullcell_development(
                 result_ghsl[count_field] = ee.Algorithms.If(has_pixels, count, 0)
         output = (
             ee.Dictionary(feature.toDictionary(base_fields))
-            .combine(isa_properties, overwrite=True)
+            .combine(ee.Dictionary(isa_properties), overwrite=True)
             .combine(water_output, overwrite=True)
             .combine(ee.Dictionary(result_ghsl), overwrite=True)
         )
