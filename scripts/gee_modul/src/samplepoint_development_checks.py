@@ -17,6 +17,7 @@ from src.samplepoint_isa_checks import (
     synthetic_isa_classes
 )
 from src.samplepoint_priority import load_priority_city_ids_json
+from src.samplepoint_grid import build_modis_cell_regions
 from src.samplepoint_utils import load_sample_points, samplepoint_base_fields
 
 
@@ -92,14 +93,10 @@ def check_synthetic_development(config: dict[str, Any]) -> None:
         ghsl_image=ghsl,
         water_image=water
     )
-    area_info = ee.Image.pixelArea().rename("_area").sampleRegions(
-        collection=points,
-        properties=["pixel_id"],
-        projection=target,
-        scale=60,
-        geometries=False
+    cell_regions = build_modis_cell_regions(points, target, 60)
+    cell_area = ee.Number(
+        ee.Feature(cell_regions.first()).get("_modis_area_m2")
     ).getInfo()
-    cell_area = _finite_number(_single_feature(area_info, "Synthetic area"), "_area", "Synthetic area")
     if not math.isclose(cell_area, 3600, rel_tol=0.01):
         raise ValueError(f"Synthetic target cell area should be near 3600 m², got {cell_area}.")
     images = prepare_fullcell_development_images(synthetic_config, source)
@@ -213,12 +210,13 @@ def check_samplepoint_development_city(
             f"Sample output did not preserve selected IDs: "
             f"expected={expected_ids}, received={received_ids}."
         )
-    area_info = ee.Image.pixelArea().rename("_area").sampleRegions(
-        collection=selected,
-        properties=["pixel_id", id_field],
-        projection=projection,
-        scale=scale,
-        geometries=False
+    area_info = build_modis_cell_regions(selected, projection, scale).map(
+        lambda feature: ee.Feature(
+            None,
+            ee.Feature(feature).toDictionary([
+                "pixel_id", id_field, "_modis_area_m2"
+            ])
+        )
     ).getInfo()
     areas: dict[str, float] = {}
     for feature in area_info.get("features", []):
@@ -228,7 +226,9 @@ def check_samplepoint_development_city(
         name = properties["pixel_id"]
         if name in areas:
             raise ValueError(f"Duplicate pixel ID in cell-area output: {name}.")
-        areas[name] = _finite_number(properties, "_area", f"Pixel {name}")
+        areas[name] = _finite_number(
+            properties, "_modis_area_m2", f"Pixel {name}"
+        )
     if set(areas) != set(expected_ids):
         raise ValueError("Cell-area output does not match the selected point IDs.")
 

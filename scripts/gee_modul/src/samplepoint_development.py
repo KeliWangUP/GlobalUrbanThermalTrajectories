@@ -5,27 +5,39 @@ import ee
 
 from src.samplepoint_attributes import (
     SamplePointSources,
-    _join_by_point_and_city,
-    _sample_modis_grid_image
+    _join_by_point_and_city
 )
-from src.samplepoint_grid import mean_fullcell_zero_mask
+from src.samplepoint_grid import (
+    build_modis_cell_regions,
+    reduce_over_modis_cells
+)
 from src.samplepoint_isa import build_fullcell_isa_image
 from src.samplepoint_utils import samplepoint_base_fields
 
 
 @dataclass(frozen=True)
 class FullCellDevelopmentImages:
-    isa_fractions: ee.Image
-    water_fractions: ee.Image
+    isa_area_image: ee.Image
+    water_area_image: ee.Image
     ghsl_image: ee.Image
     isa_years: tuple[int, ...]
 
 
-def build_fullcell_water_image(water_image: ee.Image, max_pixels: int) -> ee.Image:
-    """Build full-cell water and valid-WBM coverage fractions."""
-    water = water_image.rename("_water_fraction_full")
-    valid = water_image.mask().gt(0).rename("_water_valid_fraction_full")
-    return mean_fullcell_zero_mask(ee.Image.cat([water, valid]), max_pixels)
+def build_fullcell_water_image(water_image: ee.Image) -> ee.Image:
+    """Build water and valid-coverage area bands on the WBM source grid."""
+    pixel_area = ee.Image.pixelArea()
+    water_area = (
+        water_image.unmask(0, sameFootprint=False)
+        .multiply(pixel_area)
+        .rename("_water_area_m2")
+    )
+    valid_area = (
+        water_image.mask().gt(0)
+        .unmask(0, sameFootprint=False)
+        .multiply(pixel_area)
+        .rename("_water_valid_area_m2")
+    )
+    return ee.Image.cat([water_area, valid_area])
 
 
 def prepare_fullcell_development_images(
@@ -34,10 +46,10 @@ def prepare_fullcell_development_images(
 ) -> FullCellDevelopmentImages:
     max_pixels = config["samplepoint_attributes"]["max_pixels_per_cell"]
     return FullCellDevelopmentImages(
-        isa_fractions=build_fullcell_isa_image(
+        isa_area_image=build_fullcell_isa_image(
             sources.isa_image, sources.isa_years, max_pixels
         ),
-        water_fractions=build_fullcell_water_image(sources.water_image, max_pixels),
+        water_area_image=build_fullcell_water_image(sources.water_image),
         ghsl_image=sources.ghsl_image,
         isa_years=sources.isa_years
     )
@@ -50,58 +62,63 @@ def sample_fullcell_development(
     scale: float,
     images: FullCellDevelopmentImages
 ) -> ee.FeatureCollection:
-    """Sample full-cell ISA/water and legacy-compatible GHSL statistics."""
+    """Reduce ISA, water and GHSL directly over each MODIS pixel footprint."""
     base_fields = samplepoint_base_fields(config)
     id_field = config["cities"]["id_field"]
     max_pixels = config["samplepoint_attributes"]["max_pixels_per_cell"]
     tile_scale = config["processing"]["tile_scale"]
-    fractions = ee.Image.cat([
-        images.isa_fractions,
-        images.water_fractions,
-        ee.Image.pixelArea().rename("_modis_area_m2")
-    ])
-    primary = fractions.sampleRegions(
-        collection=points,
-        properties=base_fields,
-        projection=projection,
-        scale=scale,
-        tileScale=tile_scale,
-        geometries=False
+    regions = build_modis_cell_regions(points, projection, scale)
+    sum_reducer = ee.Reducer.sum()
+
+    isa_stats = reduce_over_modis_cells(
+        images.isa_area_image, regions, sum_reducer, max_pixels, tile_scale
+    )
+    water_stats = reduce_over_modis_cells(
+        images.water_area_image, regions, sum_reducer, max_pixels, tile_scale
     )
     ghsl_reducer = ee.Reducer.mean().combine(
         reducer2=ee.Reducer.count(),
         sharedInputs=True
     )
-    ghsl_stats = _sample_modis_grid_image(
-        image=images.ghsl_image,
-        reducer=ghsl_reducer,
-        points=points,
-        properties=base_fields,
-        projection=projection,
-        scale=scale,
-        max_pixels=max_pixels,
-        tile_scale=tile_scale,
-        fill_value=-1
+    ghsl_stats = reduce_over_modis_cells(
+        images.ghsl_image, regions, ghsl_reducer, max_pixels, tile_scale
+    )
+    isa_water = _join_by_point_and_city(
+        primary=isa_stats,
+        secondary=water_stats,
+        id_field=id_field,
+        match_property="_water_stats"
     )
     joined = _join_by_point_and_city(
-        primary=primary,
+        primary=isa_water,
         secondary=ghsl_stats,
         id_field=id_field,
         match_property="_ghsl_stats",
         outer=True
     )
-    isa_fields = [f"isa_urban_fraction_{year}" for year in images.isa_years]
 
     def format_feature(feature: ee.Feature) -> ee.Feature:
         feature = ee.Feature(feature)
         cell_area = ee.Number(feature.get("_modis_area_m2"))
-        water_fraction = ee.Number(feature.get("_water_fraction_full"))
-        valid_fraction = ee.Number(feature.get("_water_valid_fraction_full"))
-        water_properties = ee.Dictionary({
-            "water_area_m2": water_fraction.multiply(cell_area),
-            "water_valid_area_m2": valid_fraction.multiply(cell_area),
-            "water_fraction": water_fraction
+        isa_properties = ee.Dictionary({
+            f"isa_urban_fraction_{year}": (
+                ee.Number(feature.get(f"_isa_area_{year}")).divide(cell_area)
+            )
+            for year in images.isa_years
         })
+        water_feature = ee.Feature(feature.get("_water_stats"))
+        water_properties = ee.Dictionary(water_feature.toDictionary([
+            "_water_area_m2",
+            "_water_valid_area_m2"
+        ]))
+        water_area = ee.Number(water_properties.get("_water_area_m2", 0))
+        valid_area = ee.Number(water_properties.get("_water_valid_area_m2", 0))
+        water_output = ee.Dictionary({
+            "water_area_m2": water_area,
+            "water_valid_area_m2": valid_area,
+            "water_fraction": water_area.divide(cell_area)
+        })
+
         match = feature.get("_ghsl_stats")
         ghsl_properties = ee.Dictionary(ee.Algorithms.If(
             ee.Algorithms.IsEqual(match, None),
@@ -120,8 +137,9 @@ def sample_fullcell_development(
                 )
                 result_ghsl[count_field] = ee.Algorithms.If(has_pixels, count, 0)
         output = (
-            ee.Dictionary(feature.toDictionary(base_fields + isa_fields))
-            .combine(water_properties, overwrite=True)
+            ee.Dictionary(feature.toDictionary(base_fields))
+            .combine(isa_properties, overwrite=True)
+            .combine(water_output, overwrite=True)
             .combine(ee.Dictionary(result_ghsl), overwrite=True)
         )
         return ee.Feature(None, output)

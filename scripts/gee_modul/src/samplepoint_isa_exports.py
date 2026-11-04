@@ -108,7 +108,7 @@ def export_samplepoint_isa(
             )
         export_name = f"{dataset_name}_{version}_{suffix}"
         collection = sample_fullcell_isa(
-            fraction_image, selected_points, config, projection, scale
+            fraction_image, selected_points, config, projection, scale, years
         )
         task = export_table_to_drive(
             collection=collection,

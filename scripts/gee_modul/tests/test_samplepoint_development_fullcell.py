@@ -69,26 +69,39 @@ class SamplepointFullCellDevelopmentTests(unittest.TestCase):
                 water_area += 900 if water and valid else 0
         self.assertEqual((water_area, valid_area, water_area / 3600), (900, 2700, 0.25))
 
-    def test_water_uses_fullcell_indicator_and_independent_coverage(self):
+    def test_water_builds_area_numerators_and_independent_coverage(self):
         water = MagicMock()
-        joined = MagicMock()
+        pixel_area = MagicMock()
+        water_area = MagicMock()
+        valid_area = MagicMock()
         with (
             patch.object(development.ee, "Image") as image,
-            patch.object(development, "mean_fullcell_zero_mask", return_value="fraction") as aggregate
         ):
-            image.cat.return_value = joined
-            result = development.build_fullcell_water_image(water, 4096)
-        water.rename.assert_called_once_with("_water_fraction_full")
+            image.pixelArea.return_value = pixel_area
+            image.cat.return_value = "area-image"
+            water.unmask.return_value.multiply.return_value.rename.return_value = water_area
+            water.mask.return_value.gt.return_value.unmask.return_value.multiply.return_value.rename.return_value = valid_area
+            result = development.build_fullcell_water_image(water)
+        water.unmask.assert_called_once_with(0, sameFootprint=False)
+        water.unmask.return_value.multiply.assert_called_once_with(pixel_area)
+        water.unmask.return_value.multiply.return_value.rename.assert_called_once_with(
+            "_water_area_m2"
+        )
         water.mask.return_value.gt.assert_called_once_with(0)
-        water.mask.return_value.gt.return_value.rename.assert_called_once_with(
-            "_water_valid_fraction_full"
+        water.mask.return_value.gt.return_value.unmask.assert_called_once_with(
+            0, sameFootprint=False
+        )
+        water.mask.return_value.gt.return_value.unmask.return_value.multiply.assert_called_once_with(
+            pixel_area
+        )
+        water.mask.return_value.gt.return_value.unmask.return_value.multiply.return_value.rename.assert_called_once_with(
+            "_water_valid_area_m2"
         )
         image.cat.assert_called_once_with([
-            water.rename.return_value,
-            water.mask.return_value.gt.return_value.rename.return_value
+            water_area,
+            valid_area
         ])
-        aggregate.assert_called_once_with(joined, 4096)
-        self.assertEqual(result, "fraction")
+        self.assertEqual(result, "area-image")
 
     def test_legacy_and_outer_join_keep_their_distinct_modes(self):
         with (
@@ -216,11 +229,15 @@ class SamplepointFullCellDevelopmentTests(unittest.TestCase):
                 patch.object(checks, "prepare_samplepoint_sources", return_value=sources),
                 patch.object(checks, "prepare_fullcell_development_images", return_value="images"),
                 patch.object(checks, "sample_fullcell_development", return_value=result),
-                patch.object(checks.ee, "Image") as image
+                patch.object(checks, "build_modis_cell_regions") as cell_regions
             ):
-                area_sample = image.pixelArea.return_value.rename.return_value.sampleRegions.return_value
-                area_sample.getInfo.return_value = {
-                    "features": [{"properties": {"pixel_id": "MODIS_1_2", "city": 20, "_area": 3600}}]
+                cell_regions.return_value.map.return_value.getInfo.return_value = {
+                    "features": [{
+                        "properties": {
+                            "pixel_id": "MODIS_1_2", "city": 20,
+                            "_modis_area_m2": 3600
+                        }
+                    }]
                 }
                 checks.check_samplepoint_development_city(config, "projection", 926)
                 isa_check.assert_called_once_with(config)

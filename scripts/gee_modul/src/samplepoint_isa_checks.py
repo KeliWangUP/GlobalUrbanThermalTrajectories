@@ -75,7 +75,9 @@ def check_synthetic_fullcell(config: dict[str, Any]) -> None:
         ("all_masked", classes.updateMask(ee.Image.constant(0)), (0, 0, 0))
     ):
         fractions = build_fullcell_isa_image(image, years, max_pixels=16)
-        sample = sample_fullcell_isa(fractions, points, config, target, 60).getInfo()
+        sample = sample_fullcell_isa(
+            fractions, points, config, target, 60, years
+        ).getInfo()
         features = sample.get("features", [])
         if len(features) != 1:
             raise ValueError(f"Synthetic {label}: expected one sample, got {len(features)}.")
@@ -123,7 +125,9 @@ def check_samplepoint_isa_city(
     fractions = build_fullcell_isa_image(
         image, years, config["samplepoint_attributes"]["max_pixels_per_cell"]
     )
-    info = sample_fullcell_isa(fractions, selected, config, projection, scale).getInfo()
+    info = sample_fullcell_isa(
+        fractions, selected, config, projection, scale, years
+    ).getInfo()
     features = info.get("features", [])
     received_ids = [feature["properties"].get("pixel_id") for feature in features]
     if (

@@ -2,7 +2,11 @@ from typing import Any
 
 import ee
 
-from src.samplepoint_grid import mean_fullcell_zero_mask, validate_max_pixels
+from src.samplepoint_grid import (
+    build_modis_cell_regions,
+    reduce_over_modis_cells,
+    validate_max_pixels
+)
 from src.samplepoint_utils import samplepoint_base_fields
 
 
@@ -22,7 +26,7 @@ def build_fullcell_isa_image(
     years: tuple[int, ...],
     max_pixels: int
 ) -> ee.Image:
-    """Aggregate annual ISA indicators over the entire MODIS pixel area."""
+    """Build annual urban-area numerator bands for MODIS-cell reductions."""
     if (
         not years
         or any(type(year) is not int or not 1985 <= year <= 2021 for year in years)
@@ -33,26 +37,47 @@ def build_fullcell_isa_image(
     bands = [
         isa_image.gte(2023 - year)
         .And(isa_image.lte(38))
-        .rename(f"isa_urban_fraction_{year}")
+        .unmask(0, sameFootprint=False)
+        .multiply(ee.Image.pixelArea())
+        .rename(f"_isa_area_{year}")
         for year in years
     ]
-    return mean_fullcell_zero_mask(ee.Image.cat(bands), max_pixels)
+    return ee.Image.cat(bands)
 
 
 def sample_fullcell_isa(
-    fraction_image: ee.Image,
+    area_image: ee.Image,
     points: ee.FeatureCollection,
     config: dict[str, Any],
     projection: ee.Projection,
-    scale: float
+    scale: float,
+    years: tuple[int, ...]
 ) -> ee.FeatureCollection:
-    """Sample full-cell annual ISA fractions at existing MODIS points."""
+    """Reduce urban area within each MODIS cell and return cell fractions."""
     base_fields = samplepoint_base_fields(config)
-    return fraction_image.sampleRegions(
-        collection=points,
-        properties=base_fields,
-        projection=projection,
-        scale=scale,
-        tileScale=config["processing"]["tile_scale"],
-        geometries=False
+    max_pixels = config["samplepoint_attributes"]["max_pixels_per_cell"]
+    regions = build_modis_cell_regions(points, projection, scale)
+    areas = reduce_over_modis_cells(
+        area_image,
+        regions,
+        ee.Reducer.sum(),
+        max_pixels,
+        config["processing"]["tile_scale"]
     )
+
+    def format_feature(feature: ee.Feature) -> ee.Feature:
+        feature = ee.Feature(feature)
+        cell_area = ee.Number(feature.get("_modis_area_m2"))
+        fractions = ee.Dictionary({
+            f"isa_urban_fraction_{year}": (
+                ee.Number(feature.get(f"_isa_area_{year}")).divide(cell_area)
+            )
+            for year in years
+        })
+        properties = (
+            ee.Dictionary(feature.toDictionary(base_fields))
+            .combine(fractions, overwrite=True)
+        )
+        return ee.Feature(None, properties)
+
+    return areas.map(format_feature)

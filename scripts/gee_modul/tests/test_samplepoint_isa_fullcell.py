@@ -82,28 +82,33 @@ class SamplepointFullCellISATests(unittest.TestCase):
             {1985: 0.25, 2020: 0.5, 2021: 0.75}
         )
 
-    def test_fill_precedes_weighted_mean_and_annual_thresholds(self):
+    def test_masked_annual_indicators_become_area_numerators(self):
         source = MagicMock()
-        year_bands = [MagicMock(), MagicMock(), MagicMock()]
-        source.gte.side_effect = year_bands
-        concatenated = MagicMock()
-        dense = concatenated.unmask.return_value
+        indicators = [MagicMock(), MagicMock(), MagicMock()]
+        source.gte.side_effect = indicators
+        pixel_area = MagicMock()
         with (
             patch.object(isa.ee, "Image") as image,
-            patch.object(isa.ee, "Reducer") as reducer
         ):
-            image.cat.return_value = concatenated
-            reducer.mean.return_value = "weighted-mean"
+            image.pixelArea.return_value = pixel_area
+            image.cat.return_value = "area-image"
             result = isa.build_fullcell_isa_image(
                 source, (1985, 2020, 2021), 4096
             )
         self.assertEqual(source.gte.call_args_list, [call(38), call(3), call(2)])
         self.assertEqual(source.lte.call_args_list, [call(38), call(38), call(38)])
-        concatenated.unmask.assert_called_once_with(0, sameFootprint=False)
-        dense.reduceResolution.assert_called_once_with(
-            reducer="weighted-mean", bestEffort=False, maxPixels=4096
-        )
-        self.assertEqual(result, dense.reduceResolution.return_value)
+        for indicator, year in zip(indicators, (1985, 2020, 2021)):
+            indicator.And.assert_called_once()
+            indicator.And.return_value.unmask.assert_called_once_with(
+                0, sameFootprint=False
+            )
+            indicator.And.return_value.unmask.return_value.multiply.assert_called_once_with(
+                pixel_area
+            )
+            indicator.And.return_value.unmask.return_value.multiply.return_value.rename.assert_called_once_with(
+                f"_isa_area_{year}"
+            )
+        self.assertEqual(result, "area-image")
 
     def test_fraction_reference_cases_and_invalid_inputs(self):
         checks._validate_fractions({
@@ -203,7 +208,9 @@ class SamplepointFullCellISATests(unittest.TestCase):
                 )
                 in_list.assert_called_with("city", [20])
                 build.assert_called_with("isa", (1985, 2020, 2021), 4096)
-                sample.assert_called_with("image", chosen, config, "projection", 926)
+                sample.assert_called_with(
+                    "image", chosen, config, "projection", 926, (1985, 2020, 2021)
+                )
                 self.assertEqual(submitted[0]["selectors"][-3:], [
                     "isa_urban_fraction_1985", "isa_urban_fraction_2020", "isa_urban_fraction_2021"
                 ])
