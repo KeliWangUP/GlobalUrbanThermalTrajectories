@@ -58,6 +58,7 @@ def build_modis_cell_regions(
         raise ValueError("MODIS pixel scale must be a positive finite number.")
     transform, pixel_area = _projection_transform(projection, scale)
     x_scale, _, x_origin, _, y_scale, y_origin = transform
+    max_error = ee.ErrorMargin(1, "projected")
 
     def to_cell(feature: ee.Feature) -> ee.Feature:
         feature = ee.Feature(feature)
@@ -69,10 +70,17 @@ def build_modis_cell_regions(
         y1 = y.add(1).multiply(y_scale).add(y_origin)
         x_min, x_max = (x0, x1) if x_scale > 0 else (x1, x0)
         y_min, y_max = (y0, y1) if y_scale > 0 else (y1, y0)
-        cell = ee.Geometry.Rectangle(
-            [x_min, y_min, x_max, y_max],
+        cell = ee.Geometry.Polygon(
+            [[
+                [x_min, y_max],
+                [x_max, y_max],
+                [x_max, y_min],
+                [x_min, y_min],
+                [x_min, y_max]
+            ]],
             proj=projection,
-            geodesic=False
+            geodesic=False,
+            maxError=max_error
         )
         return feature.setGeometry(cell).set("_modis_area_m2", pixel_area)
 

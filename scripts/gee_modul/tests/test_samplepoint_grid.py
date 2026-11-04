@@ -34,18 +34,23 @@ class SamplepointGridTests(unittest.TestCase):
         with (
             patch.object(grid.ee, "Number", side_effect=Number),
             patch.object(grid.ee, "Geometry") as geometry,
+            patch.object(grid.ee, "ErrorMargin", return_value="projected-margin") as error_margin,
             patch.object(grid.ee, "Feature", return_value=feature)
         ):
-            geometry.Rectangle.return_value = region
+            geometry.Polygon.return_value = region
             result = grid.build_modis_cell_regions(points, projection, 60)
             map_function = points.map.call_args.args[0]
             map_function("point")
         self.assertEqual(result, points.map.return_value)
-        self.assertEqual(len(geometry.Rectangle.call_args.args), 1)
-        coordinates = geometry.Rectangle.call_args.args[0]
-        self.assertEqual([value.value for value in coordinates], [100, 140, 160, 200])
-        self.assertEqual(geometry.Rectangle.call_args.kwargs, {
-            "proj": projection, "geodesic": False
+        error_margin.assert_called_once_with(1, "projected")
+        self.assertEqual(len(geometry.Polygon.call_args.args), 1)
+        ring = geometry.Polygon.call_args.args[0][0]
+        self.assertEqual(
+            [[value.value for value in point] for point in ring],
+            [[100, 200], [160, 200], [160, 140], [100, 140], [100, 200]]
+        )
+        self.assertEqual(geometry.Polygon.call_args.kwargs, {
+            "proj": projection, "geodesic": False, "maxError": "projected-margin"
         })
         feature.setGeometry.assert_called_once_with(region)
         feature.setGeometry.return_value.set.assert_called_once_with(
