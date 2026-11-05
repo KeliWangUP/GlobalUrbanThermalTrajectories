@@ -1,0 +1,6 @@
+{
+  "paths": {
+    "trend_file": "../../data/processed/gold/city_month_slot_trends_2003_2019/city_month_slot_trends.parquet",
+    "output_dir": "../../data/processed/result/paired_month_city_trends_2003_2019"
+  }
+}

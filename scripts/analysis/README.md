@@ -182,6 +182,26 @@ The output directory includes both figures, the city-level summary CSV, and
 a manifest recording provenance and the decomposition check; it is never
 overwritten.
 
+### Paired-month city-level SUHI trend comparisons
+
+Run the requested D-February/July and C-April/July paired comparisons with:
+
+```bash
+python scripts/analysis/paired_month_city_trends.py
+```
+
+The source trend Parquet and output directory are configured in
+[`paired_month_city_trends_config.json`](./paired_month_city_trends_config.json).
+For each comparison and Terra Day/Aqua Day separately, only cities with
+city-level trend rows in both compared months and whose Köppen class starts
+with the requested group are paired. The delta is defined as
+`beta_suhi_later_month - beta_suhi_earlier_month` (July minus February for D;
+July minus April for C). The summary reports paired-city count, median delta,
+positive/zero/negative counts, and the positive fraction. Exact-zero deltas
+remain in the denominator of the positive fraction. A second CSV contains
+the city-level paired slopes and deltas for auditing; a manifest records input
+provenance and definitions.
+
 ## City-level analysis workflow
 
 The preprocessing pipeline keeps the downloaded CSVs unchanged and creates:
