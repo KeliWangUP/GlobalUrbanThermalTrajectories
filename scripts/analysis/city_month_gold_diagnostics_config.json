@@ -2,7 +2,7 @@
   "paths": {
     "gold_dir": "../../data/processed/gold/city_month_trends",
     "city_metadata": "../../data/processed/city_metadata.parquet",
-    "output_dir": "../../data/processed/result/city_month_diagnostics_north"
+    "output_dir": "../../result/figures/city_month_diagnostics_north"
   },
   "hemisphere": "north",
   "expected_city_count": 1700,

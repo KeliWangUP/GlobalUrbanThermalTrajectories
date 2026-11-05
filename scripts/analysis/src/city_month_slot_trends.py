@@ -1,0 +1,400 @@
+"""Build city/month/slot OLS trends from the monthly SUHI master table."""
+from __future__ import annotations
+
+import hashlib
+import json
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+import duckdb
+
+
+SLOTS = (
+    ("terra_day", "qc_pass_terra_day"),
+    ("terra_night", "qc_pass_terra_night"),
+    ("aqua_day", "qc_pass_aqua_day"),
+    ("aqua_night", "qc_pass_aqua_night"),
+)
+METRICS = ("suhi", "urban", "rural")
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as file:
+        for block in iter(lambda: file.read(4 * 1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _load_config(config_path: Path) -> dict[str, Any]:
+    config_path = config_path.resolve()
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    if not isinstance(config, dict):
+        raise ValueError("Config must be a JSON object.")
+    paths = config.get("paths")
+    if not isinstance(paths, dict):
+        raise ValueError("Config must contain a 'paths' object.")
+    for key in ("monthly_suhi_file", "output_dir"):
+        value = paths.get(key)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"Config 'paths.{key}' must be a non-empty path.")
+        path = Path(value).expanduser()
+        if not path.is_absolute():
+            path = config_path.parent / path
+        paths[key] = path.resolve().as_posix()
+
+    years = config.get("years")
+    if not isinstance(years, dict):
+        raise ValueError("Config must contain a 'years' object.")
+    start = years.get("start")
+    end = years.get("end")
+    minimum = years.get("minimum_valid_years")
+    for name, value in (("start", start), ("end", end)):
+        if type(value) is not int or value < 1:
+            raise ValueError(f"Config 'years.{name}' must be a positive integer.")
+    if start > end:
+        raise ValueError("Config 'years.start' must not exceed 'years.end'.")
+    if type(minimum) is not int or not 2 <= minimum <= end - start + 1:
+        raise ValueError(
+            "Config 'years.minimum_valid_years' must be between 2 and the "
+            "configured period length."
+        )
+    scale = config.get("beta_scale_years")
+    if type(scale) is not int or scale < 1:
+        raise ValueError("Config 'beta_scale_years' must be a positive integer.")
+    config["_config_path"] = str(config_path)
+    config["years"] = {
+        "start": start,
+        "end": end,
+        "minimum_valid_years": minimum,
+    }
+    return config
+
+
+def _quote_string(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _source_columns() -> set[str]:
+    required = {
+        "ID_UC_G0",
+        "year",
+        "month",
+        "centroid_lat",
+        "koppen_geiger_class",
+    }
+    for slot, qc_column in SLOTS:
+        required.add(qc_column)
+        required.update(
+            {
+                f"urban_{slot}_mean",
+                f"rural_{slot}_mean",
+                f"suhi_{slot}_mean",
+            }
+        )
+    return required
+
+
+def _validate_source(connection: duckdb.DuckDBPyConnection, source: Path) -> None:
+    description = connection.execute(
+        "DESCRIBE SELECT * FROM read_parquet(?)",
+        [source.as_posix()],
+    ).fetchall()
+    available = {row[0] for row in description}
+    missing = _source_columns() - available
+    if missing:
+        raise ValueError(
+            f"Monthly SUHI table is missing fields: {sorted(missing)}."
+        )
+
+    duplicate_count = connection.execute(
+        """
+        SELECT COUNT(*)
+        FROM (
+            SELECT ID_UC_G0, year, month
+            FROM read_parquet(?)
+            GROUP BY ID_UC_G0, year, month
+            HAVING COUNT(*) > 1
+        )
+        """,
+        [source.as_posix()],
+    ).fetchone()[0]
+    if duplicate_count:
+        raise ValueError(
+            "Monthly SUHI table contains duplicate city/year/month keys."
+        )
+
+    inconsistent_metadata = connection.execute(
+        """
+        SELECT COUNT(*)
+        FROM (
+            SELECT ID_UC_G0
+            FROM read_parquet(?)
+            GROUP BY ID_UC_G0
+            HAVING COUNT(DISTINCT centroid_lat) > 1
+                OR COUNT(DISTINCT koppen_geiger_class) > 1
+        )
+        """,
+        [source.as_posix()],
+    ).fetchone()[0]
+    if inconsistent_metadata:
+        raise ValueError(
+            "Monthly SUHI table has inconsistent latitude or climate "
+            "metadata within a city."
+        )
+
+    invalid_qc_types = [
+        row[0]
+        for row in description
+        if row[0] in {qc for _, qc in SLOTS} and row[1] != "BOOLEAN"
+    ]
+    if invalid_qc_types:
+        raise TypeError(
+            f"QC columns must be BOOLEAN: {sorted(invalid_qc_types)}."
+        )
+
+
+def _trend_query(
+    source: Path,
+    start_year: int,
+    end_year: int,
+    minimum_valid_years: int,
+    beta_scale_years: int,
+) -> str:
+    slot_rows = []
+    for slot, qc_column in SLOTS:
+        slot_rows.append(
+            "("
+            f"{_quote_string(slot)}, "
+            f"{qc_column}, "
+            f"CAST(urban_{slot}_mean AS DOUBLE), "
+            f"CAST(rural_{slot}_mean AS DOUBLE), "
+            f"CAST(suhi_{slot}_mean AS DOUBLE)"
+            ")"
+        )
+    slot_values = ",\n                ".join(slot_rows)
+    source_path = _quote_string(source.as_posix())
+    return f"""
+        WITH monthly AS (
+            SELECT
+                CAST(ID_UC_G0 AS BIGINT) AS ID_UC_G0,
+                CAST(year AS INTEGER) AS year,
+                CAST(month AS INTEGER) AS month,
+                CAST(centroid_lat AS DOUBLE) AS centroid_lat,
+                CAST(koppen_geiger_class AS VARCHAR) AS climate,
+                {", ".join(
+                    f"CAST({column} AS DOUBLE) AS {column}"
+                    for slot, _ in SLOTS
+                    for column in (
+                        f"urban_{slot}_mean",
+                        f"rural_{slot}_mean",
+                        f"suhi_{slot}_mean",
+                    )
+                )},
+                {", ".join(qc for _, qc in SLOTS)}
+            FROM read_parquet({source_path})
+            WHERE year BETWEEN {start_year} AND {end_year}
+        ),
+        observations AS (
+            SELECT
+                monthly.ID_UC_G0,
+                monthly.climate,
+                monthly.centroid_lat,
+                CASE
+                    WHEN monthly.centroid_lat > 0 THEN 'north'
+                    WHEN monthly.centroid_lat < 0 THEN 'south'
+                    WHEN monthly.centroid_lat = 0 THEN 'equator'
+                    ELSE NULL
+                END AS hemisphere,
+                monthly.month,
+                slot_values.slot,
+                monthly.year,
+                slot_values.urban,
+                slot_values.rural,
+                slot_values.suhi
+            FROM monthly
+            CROSS JOIN LATERAL (
+                VALUES
+                {slot_values}
+            ) AS slot_values(slot, qc_pass, urban, rural, suhi)
+            WHERE slot_values.qc_pass IS TRUE
+              AND slot_values.urban IS NOT NULL
+              AND slot_values.rural IS NOT NULL
+              AND slot_values.suhi IS NOT NULL
+              AND isfinite(slot_values.urban)
+              AND isfinite(slot_values.rural)
+              AND isfinite(slot_values.suhi)
+        ),
+        fitted AS (
+            SELECT
+                ID_UC_G0,
+                climate,
+                centroid_lat,
+                hemisphere,
+                month,
+                slot,
+                COUNT(*) AS n_valid_years,
+                regr_slope(suhi, year) AS slope_suhi,
+                regr_slope(urban, year) AS slope_urban,
+                regr_slope(rural, year) AS slope_rural,
+                regr_sxx(suhi, year) AS sxx_suhi,
+                regr_sxx(urban, year) AS sxx_urban,
+                regr_sxx(rural, year) AS sxx_rural,
+                regr_sxy(suhi, year) AS sxy_suhi,
+                regr_sxy(urban, year) AS sxy_urban,
+                regr_sxy(rural, year) AS sxy_rural,
+                regr_syy(suhi, year) AS syy_suhi,
+                regr_syy(urban, year) AS syy_urban,
+                regr_syy(rural, year) AS syy_rural
+            FROM observations
+            GROUP BY ID_UC_G0, climate, centroid_lat, hemisphere, month, slot
+            HAVING COUNT(*) >= {minimum_valid_years}
+        )
+        SELECT
+            ID_UC_G0,
+            climate,
+            centroid_lat,
+            hemisphere,
+            month,
+            slot,
+            slope_suhi * {beta_scale_years} AS beta_suhi,
+            slope_urban * {beta_scale_years} AS beta_urban,
+            slope_rural * {beta_scale_years} AS beta_rural,
+            SQRT(
+                GREATEST(
+                    syy_suhi - sxy_suhi * sxy_suhi
+                        / NULLIF(sxx_suhi, 0),
+                    0
+                ) / (n_valid_years - 2) / NULLIF(sxx_suhi, 0)
+            ) * {beta_scale_years} AS se_suhi,
+            SQRT(
+                GREATEST(
+                    syy_urban - sxy_urban * sxy_urban
+                        / NULLIF(sxx_urban, 0),
+                    0
+                ) / (n_valid_years - 2) / NULLIF(sxx_urban, 0)
+            ) * {beta_scale_years} AS se_urban,
+            SQRT(
+                GREATEST(
+                    syy_rural - sxy_rural * sxy_rural
+                        / NULLIF(sxx_rural, 0),
+                    0
+                ) / (n_valid_years - 2) / NULLIF(sxx_rural, 0)
+            ) * {beta_scale_years} AS se_rural,
+            n_valid_years
+        FROM fitted
+        ORDER BY ID_UC_G0, month, slot
+    """
+
+
+def build_city_month_slot_trends(config_path: Path) -> Path:
+    config_path = config_path.resolve()
+    config = _load_config(config_path)
+    source = Path(config["paths"]["monthly_suhi_file"])
+    if not source.is_file():
+        raise FileNotFoundError(f"Monthly SUHI table not found: {source}")
+
+    output_dir = Path(config["paths"]["output_dir"])
+    if output_dir.exists():
+        raise FileExistsError(
+            f"Output directory already exists; refusing to overwrite: "
+            f"{output_dir}"
+        )
+    output_dir.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(
+        tempfile.mkdtemp(
+            prefix=f".{output_dir.name}_staging_",
+            dir=output_dir.parent,
+        )
+    )
+    published = False
+    connection = duckdb.connect(":memory:")
+    try:
+        _validate_source(connection, source)
+        query = _trend_query(
+            source,
+            config["years"]["start"],
+            config["years"]["end"],
+            config["years"]["minimum_valid_years"],
+            config["beta_scale_years"],
+        )
+        parquet_path = staging / "city_month_slot_trends.parquet"
+        connection.execute(
+            f"COPY ({query}) TO {_quote_string(parquet_path.as_posix())} "
+            "(FORMAT PARQUET, COMPRESSION ZSTD)"
+        )
+        row_count = connection.execute(
+            "SELECT COUNT(*) FROM read_parquet(?)",
+            [parquet_path.as_posix()],
+        ).fetchone()[0]
+        if row_count == 0:
+            raise ValueError(
+                "No city/month/slot groups met the QC and valid-year "
+                "requirements."
+            )
+        duplicate_groups = connection.execute(
+            """
+            SELECT COUNT(*)
+            FROM (
+                SELECT ID_UC_G0, month, slot
+                FROM read_parquet(?)
+                GROUP BY ID_UC_G0, month, slot
+                HAVING COUNT(*) > 1
+            )
+            """,
+            [parquet_path.as_posix()],
+        ).fetchone()[0]
+        if duplicate_groups:
+            raise ValueError(
+                "Trend output has duplicate city/month/slot keys."
+            )
+        output_schema = connection.execute(
+            "DESCRIBE SELECT * FROM read_parquet(?)",
+            [parquet_path.as_posix()],
+        ).fetchall()
+
+        manifest = {
+            "format_version": 1,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "source_file": source.name,
+            "source_sha256": _sha256(source),
+            "config_file": config_path.name,
+            "config_sha256": _sha256(config_path),
+            "years": config["years"],
+            "beta_scale_years": config["beta_scale_years"],
+            "beta_units": f"degrees_Celsius_per_{config['beta_scale_years']}_years",
+            "standard_error_units": (
+                f"degrees_Celsius_per_{config['beta_scale_years']}_years"
+            ),
+            "qc_policy": (
+                "Use only observations whose slot-specific qc_pass flag is "
+                "TRUE and whose urban, rural, and SUHI means are finite."
+            ),
+            "output_rows": row_count,
+            "output_columns": [row[0] for row in output_schema],
+            "output_sha256": _sha256(parquet_path),
+        }
+        (staging / "manifest.json").write_text(
+            json.dumps(manifest, ensure_ascii=True, indent=2) + "\n",
+            encoding="utf-8",
+        )
+        if output_dir.exists():
+            raise FileExistsError(
+                f"Output directory appeared during build: {output_dir}"
+            )
+        staging.rename(output_dir)
+        published = True
+        print(
+            f"[DONE] Wrote {row_count:,} city/month/slot trends to "
+            f"{output_dir / 'city_month_slot_trends.parquet'}",
+            flush=True,
+        )
+        return output_dir / "city_month_slot_trends.parquet"
+    finally:
+        connection.close()
+        if not published and staging.exists():
+            import shutil
+
+            shutil.rmtree(staging)

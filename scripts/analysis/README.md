@@ -129,6 +129,32 @@ preserves those stored values but does not restore precision previously lost
 when the v2 inputs were created. The manifest includes source SHA-256 hashes
 and row counts. Data under `data/` is not tracked by Git.
 
+### City/month/slot trend Gold table
+
+Build `city_month_slot_trends.parquet` from the monthly master SUHI table with:
+
+```bash
+python scripts/analysis/build_city_month_slot_trends.py
+```
+
+The settings are in
+[`city_month_slot_trends_config.json`](./city_month_slot_trends_config.json).
+The default period is 2003–2019, and the default output is
+`data/processed/gold/city_month_slot_trends_2003_2019/`. Each output row is
+one city, calendar month, and Terra/Aqua day/night slot. It includes the
+Köppen-Geiger class as `climate`, centroid latitude, hemisphere derived from
+latitude (`north`, `south`, `equator`, or null for missing latitude), OLS
+slopes for SUHI/urban/rural LST, their standard errors, and `n_valid_years`.
+
+Only years with that slot's `qc_pass_* == true` and finite urban, rural, and
+SUHI means are used. A row is emitted only with at least the configured
+`minimum_valid_years` (15 by default); this does not require every year in the
+period to pass QC. Slopes and standard errors are scaled to degrees Celsius
+per decade. Standard errors are the conventional OLS slope standard errors,
+calculated from the residual sum of squares with `n - 2` degrees of freedom.
+The output directory is never overwritten; the Parquet and its provenance
+manifest are published together.
+
 ## City-level analysis workflow
 
 The preprocessing pipeline keeps the downloaded CSVs unchanged and creates:
