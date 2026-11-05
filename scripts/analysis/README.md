@@ -58,6 +58,43 @@ rows = con.execute(
 ).fetchall()
 ```
 
+## City-month Gold trend dataset
+
+The Gold builder streams the Silver pixel LST, development, and rural Parquets
+through DuckDB. It applies the configured water-pixel and per-slot QC rules,
+joins urban and rural observations on city/year/month, estimates monthly
+urban, rural, and SUHI trends, and attaches city climate metadata by
+`ID_UC_G0`.
+
+The configuration maps to the current Silver schemas and the existing city
+metadata lookup:
+[`city_month_gold_config.json`](./city_month_gold_config.json). Paths are
+resolved relative to that config, so the same setup works after moving the
+project to Linux. Build from the repository root with:
+
+```bash
+python scripts/analysis/build_city_month_gold.py
+```
+
+By default the builder uses years 2000–2024 and publishes two trend windows,
+2003–2019 and 2003–2024, under
+`data/processed/gold/city_month_trends`. It creates:
+
+- `city_month_paired_qc.parquet`: matched city/month/sensor-slot observations,
+  QC flags, urban/rural means, and SUHI.
+- `city_month_slot_trends_<start>_<end>.parquet`: long-form slopes and QC
+  diagnostics for each city/month/slot.
+- `city_month_trend_wide_<start>_<end>.parquet`: one row per priority city,
+  including climate metadata and month/slot trend columns.
+- `manifest.json`: configuration, upstream Silver-manifest hash, metadata
+  hash, output schemas, row counts, and sizes.
+
+The builder validates the 1,700-city list, unique pixel and rural keys,
+complete city/month coverage, development-to-LST pixel counts, climate
+metadata coverage, and the final one-row-per-city output. Existing Gold
+output is never overwritten; choose a new `output_dir` in the config to create
+another build.
+
 The v2 mean-LST fields are already `float32`; writing them as `float64`
 preserves those stored values but does not restore precision previously lost
 when the v2 inputs were created. The manifest includes source SHA-256 hashes

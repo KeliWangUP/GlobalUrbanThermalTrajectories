@@ -1,0 +1,112 @@
+{
+  "paths": {
+    "pixel_lst": "../../data/processed/silver/pixel_lst/city_id=*/data.parquet",
+    "pixel_development": "../../data/processed/silver/pixel_development/data.parquet",
+    "rural_lst": "../../data/processed/silver/rural_lst/rural_*.parquet",
+    "city_metadata": "../../data/processed/city_metadata.parquet",
+    "priority_city_ids": "../../data/priority_city_ids_1700.json",
+    "silver_manifest": "../../data/processed/silver/manifest.json",
+    "output_dir": "../../data/processed/gold/city_month_trends"
+  },
+  "study": {
+    "start_year": 2000,
+    "end_year": 2024,
+    "expected_city_count": 1700
+  },
+  "processing": {
+    "duckdb_threads": 2,
+    "duckdb_memory": "1GB"
+  },
+  "columns": {
+    "pixel": {
+      "city": "ID_UC_G0",
+      "pixel_id": "pixel_id",
+      "year": "year",
+      "month": "month"
+    },
+    "development": {
+      "city": "ID_UC_G0",
+      "pixel_id": "pixel_id",
+      "water_fraction": "water_fraction"
+    },
+    "rural": {
+      "city": "ID_UC_G0",
+      "year": "year",
+      "month": "month"
+    },
+    "climate": {
+      "city": "ID_UC_G0",
+      "centroid_lat": "centroid_lat",
+      "koppen_code": "koppen_geiger_code",
+      "koppen_class": "koppen_geiger_class",
+      "macro_group": "koppen_geiger_macro_group"
+    }
+  },
+  "slots": {
+    "pixel": {
+      "terra_day": {
+        "lst": "terra_day_mean",
+        "clear": "terra_day_clear_days_mean",
+        "n8": "terra_day_n8day_mean"
+      },
+      "terra_night": {
+        "lst": "terra_night_mean",
+        "clear": "terra_night_clear_days_mean",
+        "n8": "terra_night_n8day_mean"
+      },
+      "aqua_day": {
+        "lst": "aqua_day_mean",
+        "clear": "aqua_day_clear_days_mean",
+        "n8": "aqua_day_n8day_mean"
+      },
+      "aqua_night": {
+        "lst": "aqua_night_mean",
+        "clear": "aqua_night_clear_days_mean",
+        "n8": "aqua_night_n8day_mean"
+      }
+    },
+    "rural": {
+      "terra_day": {
+        "lst": "terra_day_mean",
+        "clear": "terra_day_clear_days_mean",
+        "n8": "terra_day_n8day_mean",
+        "valid_pixels": "terra_day_count"
+      },
+      "terra_night": {
+        "lst": "terra_night_mean",
+        "clear": "terra_night_clear_days_mean",
+        "n8": "terra_night_n8day_mean",
+        "valid_pixels": "terra_night_count"
+      },
+      "aqua_day": {
+        "lst": "aqua_day_mean",
+        "clear": "aqua_day_clear_days_mean",
+        "n8": "aqua_day_n8day_mean",
+        "valid_pixels": "aqua_day_count"
+      },
+      "aqua_night": {
+        "lst": "aqua_night_mean",
+        "clear": "aqua_night_clear_days_mean",
+        "n8": "aqua_night_n8day_mean",
+        "valid_pixels": "aqua_night_count"
+      }
+    }
+  },
+  "qc": {
+    "max_water_fraction": 0.2,
+    "min_pixel_clear_days": 4,
+    "min_pixel_n8day": 1,
+    "min_urban_pixels": 5,
+    "min_urban_pixel_coverage": 0.5,
+    "min_rural_pixels": 5,
+    "min_rural_clear_days": 4,
+    "min_rural_n8day": 1,
+    "min_valid_year_fraction": 0.75,
+    "min_each_half_fraction": 0.5,
+    "max_missing_span_years": 3
+  },
+  "windows": [
+    [2003, 2019],
+    [2003, 2024]
+  ]
+}

@@ -1,7 +1,7 @@
 {
   "paths": {
     "pixel_lst_tar": "../../data/raw/pixel_1700/pixel_lst_parquet_all_v2.tar",
-    "pixel_development_parquet": "../../data/raw/pixel_all_develop/pixel_develop.parquet",
+    "pixel_development_parquet": "../../data/raw/pixel_develop_priority.parquet",
     "rural_csv_dir": "../../data/raw/pixel_1700/rural_1700",
     "priority_city_ids_json": "../../data/priority_city_ids_1700.json",
     "output_dir": "../../data/processed/silver"
