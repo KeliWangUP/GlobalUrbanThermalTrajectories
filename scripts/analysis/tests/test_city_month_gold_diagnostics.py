@@ -13,6 +13,7 @@ sys.path.insert(0, str(MODULE_DIR))
 
 from diagnose_city_month_gold import (
     SLOTS,
+    _filter_cities_by_hemisphere,
     run_diagnostics,
     summarize_qc_completeness,
 )
@@ -66,7 +67,38 @@ def _long_frame():
     return pd.DataFrame(records)
 
 
+def _metadata_frame():
+    return pd.DataFrame(
+        [
+            (1, 15.0),
+            (2, -5.0),
+            (3, 0.0),
+            (4, 45.0),
+        ],
+        columns=("ID_UC_G0", "centroid_lat"),
+    )
+
+
 class CityMonthGoldDiagnosticsTests(unittest.TestCase):
+    def test_hemisphere_filter_selects_north_south_and_excludes_equator(self):
+        wide = _wide_frame()
+        long = _long_frame()
+        metadata = _metadata_frame()
+
+        north_wide, north_long, north_info = _filter_cities_by_hemisphere(
+            wide, long, metadata, "north"
+        )
+        self.assertEqual(set(north_wide["ID_UC_G0"]), {1, 4})
+        self.assertEqual(set(north_long["ID_UC_G0"]), {1, 4})
+        self.assertEqual(north_info["equatorial_city_count"], 1)
+
+        south_wide, south_long, south_info = _filter_cities_by_hemisphere(
+            wide, long, metadata, "south"
+        )
+        self.assertEqual(set(south_wide["ID_UC_G0"]), {2})
+        self.assertEqual(set(south_long["ID_UC_G0"]), {2})
+        self.assertEqual(south_info["selected_city_count"], 1)
+
     def test_completeness_counts_include_zero_year_and_failed_city_fits(self):
         summary = summarize_qc_completeness(_wide_frame())
         af = summary.loc[
@@ -98,12 +130,18 @@ class CityMonthGoldDiagnosticsTests(unittest.TestCase):
             connection = duckdb.connect(":memory:")
             connection.register("wide_frame", _wide_frame())
             connection.register("long_frame", _long_frame())
+            connection.register("metadata_frame", _metadata_frame())
             connection.execute(
                 f"COPY wide_frame TO '{(gold_dir / 'city_month_trend_wide_2003_2019.parquet').as_posix()}' "
                 "(FORMAT PARQUET)"
             )
             connection.execute(
                 f"COPY long_frame TO '{(gold_dir / 'city_month_slot_trends_2003_2019.parquet').as_posix()}' "
+                "(FORMAT PARQUET)"
+            )
+            metadata_path = root / "city_metadata.parquet"
+            connection.execute(
+                f"COPY metadata_frame TO '{metadata_path.as_posix()}' "
                 "(FORMAT PARQUET)"
             )
             connection.close()
@@ -120,7 +158,9 @@ class CityMonthGoldDiagnosticsTests(unittest.TestCase):
                     "paths": {
                         "gold_dir": str(gold_dir),
                         "output_dir": str(output_dir),
+                        "city_metadata": str(metadata_path),
                     },
+                    "hemisphere": "north",
                     "expected_city_count": 4,
                     "plot": {"dpi": 40},
                 }),
@@ -146,7 +186,20 @@ class CityMonthGoldDiagnosticsTests(unittest.TestCase):
             self.assertTrue(
                 (output_dir / "qc_pass_rate_Af_Am_Aw_2003_2019.png").is_file()
             )
-            self.assertTrue((output_dir / "manifest.json").is_file())
+            diagnostics_manifest = json.loads(
+                (output_dir / "manifest.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                diagnostics_manifest["hemisphere_filter"]["selection"], "north"
+            )
+            self.assertEqual(
+                diagnostics_manifest["hemisphere_filter"]["selected_city_count"],
+                2,
+            )
+            self.assertEqual(
+                diagnostics_manifest["hemisphere_filter"]["equatorial_city_count"],
+                1,
+            )
 
 
 if __name__ == "__main__":

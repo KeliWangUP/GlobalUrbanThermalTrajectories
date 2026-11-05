@@ -113,11 +113,16 @@ use calendar months; no cold/warm seasons or global wet-season months are
 imposed. Monthly precipitation is not currently an input, so Af/Am/Aw results
 are reported month by month rather than labeling months as wet or dry.
 
-Input and output paths are set in
+The diagnostics config also supports `"hemisphere": "north"`, `"south"`, or
+`"all"`. North/south selection uses `centroid_lat` in the configured city
+metadata and filters both the wide QC denominator and long trend records;
+cities exactly on the equator are excluded from north and south. The configured
+`expected_city_count` checks the unfiltered Gold wide table. Input and output
+paths are set in
 [`city_month_gold_diagnostics_config.json`](./city_month_gold_diagnostics_config.json).
-The output directory defaults to
-`data/processed/gold/city_month_diagnostics`; an existing directory is never
-overwritten.
+The current config selects the northern hemisphere and writes to
+`data/processed/result/city_month_diagnostics_north`; an existing output
+directory is never overwritten.
 
 The v2 mean-LST fields are already `float32`; writing them as `float64`
 preserves those stored values but does not restore precision previously lost

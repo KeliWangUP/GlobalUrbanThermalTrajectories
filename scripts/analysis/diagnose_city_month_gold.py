@@ -60,7 +60,9 @@ def load_config(config_path: Path) -> dict[str, Any]:
     if not isinstance(config, dict) or not isinstance(config.get("paths"), dict):
         raise ValueError("Diagnostics config must contain a 'paths' object.")
     paths = config["paths"]
-    for key in ("gold_dir", "output_dir"):
+    for key in ("gold_dir", "output_dir", "city_metadata"):
+        if key == "city_metadata" and key not in paths:
+            continue
         value = paths.get(key)
         if not isinstance(value, str) or not value.strip():
             raise ValueError(f"Diagnostics config 'paths.{key}' must be a path.")
@@ -68,6 +70,22 @@ def load_config(config_path: Path) -> dict[str, Any]:
         if not path.is_absolute():
             path = config_path.parent / path
         paths[key] = path.resolve().as_posix()
+    hemisphere = config.get("hemisphere", "all")
+    if not isinstance(hemisphere, str) or hemisphere.strip().lower() not in {
+        "all",
+        "north",
+        "south",
+    }:
+        raise ValueError(
+            "Diagnostics config 'hemisphere' must be 'all', 'north', or 'south'."
+        )
+    hemisphere = hemisphere.strip().lower()
+    if hemisphere != "all" and "city_metadata" not in paths:
+        raise ValueError(
+            "Diagnostics config 'paths.city_metadata' is required when "
+            "filtering by hemisphere."
+        )
+    config["hemisphere"] = hemisphere
     expected = config.get("expected_city_count")
     if type(expected) is not int or expected < 1:
         raise ValueError("Diagnostics config 'expected_city_count' must be positive.")
@@ -131,6 +149,82 @@ def _validate_long(long: pd.DataFrame) -> None:
             raise ValueError("Gold long table contains unknown sensor slots.")
         if long.duplicated(["ID_UC_G0", "month", "slot"]).any():
             raise ValueError("Gold long table has duplicate city/month/slot rows.")
+
+
+def _filter_cities_by_hemisphere(
+    wide: pd.DataFrame,
+    long: pd.DataFrame,
+    metadata: pd.DataFrame | None,
+    hemisphere: str,
+) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, int | str]]:
+    source_city_count = len(wide)
+    if hemisphere == "all":
+        return wide, long, {
+            "selection": "all",
+            "source_city_count": source_city_count,
+            "selected_city_count": source_city_count,
+            "equatorial_city_count": 0,
+        }
+    if hemisphere not in {"north", "south"}:
+        raise ValueError(f"Unsupported hemisphere selection: {hemisphere}")
+    if metadata is None:
+        raise ValueError("City metadata is required for hemisphere filtering.")
+
+    required = {"ID_UC_G0", "centroid_lat"}
+    missing = required - set(metadata.columns)
+    if missing:
+        raise ValueError(
+            f"City metadata is missing fields: {sorted(missing)}."
+        )
+    if metadata["ID_UC_G0"].isna().any() or metadata["ID_UC_G0"].duplicated().any():
+        raise ValueError(
+            "City metadata must contain one non-null row per city ID."
+        )
+    metadata = metadata.loc[:, ["ID_UC_G0", "centroid_lat"]].copy()
+    metadata["centroid_lat"] = pd.to_numeric(
+        metadata["centroid_lat"], errors="coerce"
+    )
+    latitudes = metadata["centroid_lat"].to_numpy(dtype=float)
+    if (
+        not np.isfinite(latitudes).all()
+        or (metadata["centroid_lat"].abs() > 90).any()
+    ):
+        raise ValueError(
+            "City metadata centroid_lat values must be finite and within [-90, 90]."
+        )
+
+    city_locations = wide.loc[:, ["ID_UC_G0"]].merge(
+        metadata,
+        on="ID_UC_G0",
+        how="left",
+        validate="one_to_one",
+        indicator=True,
+    )
+    missing_cities = city_locations["_merge"] != "both"
+    if missing_cities.any():
+        missing_count = int(missing_cities.sum())
+        raise ValueError(
+            f"City metadata has no latitude for {missing_count} Gold cities."
+        )
+
+    equatorial = city_locations["centroid_lat"].eq(0)
+    if hemisphere == "north":
+        selected = city_locations["centroid_lat"].gt(0)
+    else:
+        selected = city_locations["centroid_lat"].lt(0)
+    selected_ids = set(city_locations.loc[selected, "ID_UC_G0"])
+    filtered_wide = wide.loc[wide["ID_UC_G0"].isin(selected_ids)].copy()
+    if filtered_wide.empty:
+        raise ValueError(
+            f"No Gold cities matched the '{hemisphere}' hemisphere selection."
+        )
+    filtered_long = long.loc[long["ID_UC_G0"].isin(selected_ids)].copy()
+    return filtered_wide, filtered_long, {
+        "selection": hemisphere,
+        "source_city_count": source_city_count,
+        "selected_city_count": len(filtered_wide),
+        "equatorial_city_count": int(equatorial.sum()),
+    }
 
 
 def summarize_qc_completeness(wide: pd.DataFrame) -> pd.DataFrame:
@@ -388,6 +482,18 @@ def run_diagnostics(config_path: Path) -> Path:
     if not isinstance(windows, list) or not windows:
         raise ValueError("Gold manifest has no trend_windows list.")
 
+    hemisphere = config["hemisphere"]
+    city_metadata_path = (
+        Path(paths["city_metadata"]) if hemisphere != "all" else None
+    )
+    city_metadata_hash = None
+    if city_metadata_path is not None:
+        if not city_metadata_path.is_file():
+            raise FileNotFoundError(
+                f"City metadata file not found: {city_metadata_path}"
+            )
+        city_metadata_hash = _sha256(city_metadata_path)
+
     output_dir = Path(paths["output_dir"])
     if output_dir.exists():
         raise FileExistsError(
@@ -405,7 +511,18 @@ def run_diagnostics(config_path: Path) -> Path:
 
     connection = duckdb.connect(":memory:")
     outputs: list[dict[str, Any]] = []
+    hemisphere_filter: dict[str, int | str] = {
+        "selection": "all",
+        "source_city_count": 0,
+        "selected_city_count": 0,
+        "equatorial_city_count": 0,
+    }
     try:
+        metadata = (
+            _read_gold_table(connection, city_metadata_path)
+            if city_metadata_path is not None
+            else None
+        )
         for window in windows:
             if (
                 not isinstance(window, list)
@@ -426,6 +543,9 @@ def run_diagnostics(config_path: Path) -> Path:
             long = _read_gold_table(connection, long_path)
             _validate_wide(wide, config["expected_city_count"])
             _validate_long(long)
+            wide, long, hemisphere_filter = _filter_cities_by_hemisphere(
+                wide, long, metadata, hemisphere
+            )
 
             summary = summarize_qc_completeness(wide)
             summary_path = staging / f"qc_completeness_{label}.csv"
@@ -458,7 +578,9 @@ def run_diagnostics(config_path: Path) -> Path:
             ):
                 outputs.append({"file": figure_path.name})
             print(
-                f"[WINDOW {label}] cities={len(wide):,}; "
+                f"[WINDOW {label}] cities={len(wide):,}/"
+                f"{hemisphere_filter['source_city_count']:,} "
+                f"({hemisphere_filter['selection']}); "
                 f"QC summary rows={len(summary):,}; "
                 f"QC-passing long rows={int(long['qc_pass'].fillna(False).sum()):,}.",
                 flush=True,
@@ -472,6 +594,8 @@ def run_diagnostics(config_path: Path) -> Path:
         "gold_manifest_sha256": _sha256(gold_manifest_path),
         "diagnostics_config_sha256": _sha256(config_path),
         "expected_city_count": config["expected_city_count"],
+        "hemisphere_filter": hemisphere_filter,
+        "city_metadata_sha256": city_metadata_hash,
         "qc_completeness_denominator": (
             "All cities in the climate zone, including zero-valid-year fits."
         ),

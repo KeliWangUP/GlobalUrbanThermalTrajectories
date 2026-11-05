@@ -1,8 +1,10 @@
 {
   "paths": {
     "gold_dir": "../../data/processed/gold/city_month_trends",
-    "output_dir": "../../data/processed/gold/city_month_diagnostics"
+    "city_metadata": "../../data/processed/city_metadata.parquet",
+    "output_dir": "../../data/processed/result/city_month_diagnostics_north"
   },
+  "hemisphere": "north",
   "expected_city_count": 1700,
   "plot": {
     "dpi": 220
