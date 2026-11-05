@@ -155,6 +155,30 @@ calculated from the residual sum of squares with `n - 2` degrees of freedom.
 The output directory is never overwritten; the Parquet and its provenance
 manifest are published together.
 
+### City/month/slot trend figures
+
+After building the city-level trend Parquet, run:
+
+```bash
+python scripts/analysis/plot_city_month_slot_trends.py
+```
+
+The input, output, Köppen major groups, and figure resolution are configured in
+[`city_month_slot_trend_figures_config.json`](./city_month_slot_trend_figures_config.json).
+By default, the script groups full Köppen classes by their first letter and
+plots A/B/C/D; add E to `climate_groups` to include polar cities.
+
+Figure 1 shows each group's monthly city-level SUHI slope median, IQR, and
+eligible-city count, with Terra/Aqua and day/night in separate panels.
+Figure 2 shows the monthly median and IQR for βU, βR, and βSUHI in the same
+climate/slot panels. Before aggregation, the script verifies for every city
+that βSUHI equals βU − βR within the configured numerical tolerance. Climate
+medians and IQRs for the three metrics are calculated independently, so the
+displayed group medians are not expected to satisfy that subtraction identity.
+The output directory includes both figures, the city-level summary CSV, and
+a manifest recording provenance and the decomposition check; it is never
+overwritten.
+
 ## City-level analysis workflow
 
 The preprocessing pipeline keeps the downloaded CSVs unchanged and creates:

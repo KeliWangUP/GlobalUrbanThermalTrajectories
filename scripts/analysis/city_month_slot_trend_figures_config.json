@@ -1,0 +1,9 @@
+{
+  "paths": {
+    "trend_file": "../../data/processed/gold/city_month_slot_trends_2003_2019/city_month_slot_trends.parquet",
+    "output_dir": "../../data/processed/result/city_month_slot_trend_figures_2003_2019"
+  },
+  "climate_groups": ["A", "B", "C", "D"],
+  "dpi": 240,
+  "decomposition_tolerance": 1e-8
+}
