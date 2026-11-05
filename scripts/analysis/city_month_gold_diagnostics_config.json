@@ -1,0 +1,10 @@
+{
+  "paths": {
+    "gold_dir": "../../data/processed/gold/city_month_trends",
+    "output_dir": "../../data/processed/gold/city_month_diagnostics"
+  },
+  "expected_city_count": 1700,
+  "plot": {
+    "dpi": 220
+  }
+}

@@ -95,6 +95,30 @@ metadata coverage, and the final one-row-per-city output. Existing Gold
 output is never overwritten; choose a new `output_dir` in the config to create
 another build.
 
+### Gold completeness and trend diagnostics
+
+After building the Gold trend tables, run:
+
+```bash
+python scripts/analysis/diagnose_city_month_gold.py
+```
+
+The diagnostics use the wide table as the QC denominator, so city/month/slot
+combinations with zero valid years remain counted as failures. They write
+monthly pass counts and fractions by Köppen major zone and full class, with a
+separate Af/Am/Aw table and heatmap. For each A/B/C/D major zone they also
+plot QC-passing monthly distributions of the urban, rural, and SUHI slopes,
+with Terra/Aqua separated and day/night shown in separate panels. The plots
+use calendar months; no cold/warm seasons or global wet-season months are
+imposed. Monthly precipitation is not currently an input, so Af/Am/Aw results
+are reported month by month rather than labeling months as wet or dry.
+
+Input and output paths are set in
+[`city_month_gold_diagnostics_config.json`](./city_month_gold_diagnostics_config.json).
+The output directory defaults to
+`data/processed/gold/city_month_diagnostics`; an existing directory is never
+overwritten.
+
 The v2 mean-LST fields are already `float32`; writing them as `float64`
 preserves those stored values but does not restore precision previously lost
 when the v2 inputs were created. The manifest includes source SHA-256 hashes
