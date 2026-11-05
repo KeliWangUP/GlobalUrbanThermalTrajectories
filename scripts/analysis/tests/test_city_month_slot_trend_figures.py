@@ -86,7 +86,9 @@ class CityMonthSlotTrendFigureTests(unittest.TestCase):
             root = Path(directory)
             source = root / "city_month_slot_trends.parquet"
             connection = duckdb.connect(":memory:")
-            connection.register("trends", _trends())
+            trends = _trends()
+            trends.loc[trends["ID_UC_G0"].eq(2), "climate"] = None
+            connection.register("trends", trends)
             connection.execute(
                 f"COPY trends TO '{source.as_posix()}' "
                 "(FORMAT PARQUET, COMPRESSION ZSTD)"
@@ -118,6 +120,14 @@ class CityMonthSlotTrendFigureTests(unittest.TestCase):
             self.assertLessEqual(
                 manifest["max_absolute_city_level_decomposition_error"],
                 1e-8,
+            )
+            self.assertEqual(
+                manifest["climate_grouping_exclusions"]["unclassified_rows"],
+                48,
+            )
+            self.assertEqual(
+                manifest["climate_grouping_exclusions"]["unclassified_cities"],
+                1,
             )
 
     def test_rejects_non_additive_city_level_coefficients(self):

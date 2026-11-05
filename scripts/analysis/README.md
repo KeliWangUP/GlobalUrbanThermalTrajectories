@@ -175,6 +175,9 @@ climate/slot panels. Before aggregation, the script verifies for every city
 that βSUHI equals βU − βR within the configured numerical tolerance. Climate
 medians and IQRs for the three metrics are calculated independently, so the
 displayed group medians are not expected to satisfy that subtraction identity.
+Rows without a valid Köppen class are excluded from climate-group summaries
+and figures, but retained in the city-level trend input; their row and city
+counts are printed and recorded in the output manifest.
 The output directory includes both figures, the city-level summary CSV, and
 a manifest recording provenance and the decomposition check; it is never
 overwritten.

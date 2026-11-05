@@ -122,10 +122,6 @@ def _validate_trends(frame: pd.DataFrame, config: dict[str, Any]) -> float:
     valid_slots = {slot for slot, _, _, _ in SLOTS}
     if not set(frame["slot"].dropna()).issubset(valid_slots):
         raise ValueError("Trend table contains unsupported slots.")
-    if frame["climate"].isna().any():
-        raise ValueError(
-            "Trend table contains rows without Köppen climate classification."
-        )
     if frame["centroid_lat"].isna().any():
         raise ValueError("Trend table contains rows without centroid latitude.")
 
@@ -146,8 +142,42 @@ def _validate_trends(frame: pd.DataFrame, config: dict[str, Any]) -> float:
             f"tolerance={tolerance:.12g}."
         )
     frame.loc[:, metric_columns] = values
-    frame["climate_group"] = frame["climate"].astype("string").str[0].str.upper()
+    climate_codes = frame["climate"].astype("string").str.strip().str.upper()
+    missing_climate = climate_codes.isna() | climate_codes.isin(
+        ["", "NODATA", "NO DATA", "NONE", "NULL"]
+    )
+    climate_groups = climate_codes.str[0].mask(missing_climate)
+    invalid_climate = climate_groups.notna() & ~climate_groups.isin(
+        ["A", "B", "C", "D", "E"]
+    )
+    if invalid_climate.any():
+        examples = sorted(climate_codes.loc[invalid_climate].unique().tolist())
+        raise ValueError(
+            f"Trend table contains invalid Köppen climate labels: {examples[:10]}."
+        )
+    frame["climate_group"] = climate_groups
     return max_error
+
+
+def _climate_exclusion_counts(
+    frame: pd.DataFrame,
+    climate_groups: list[str],
+) -> dict[str, int]:
+    missing_climate = frame["climate_group"].isna()
+    outside_groups = (
+        frame["climate_group"].notna()
+        & ~frame["climate_group"].isin(climate_groups)
+    )
+    return {
+        "unclassified_rows": int(missing_climate.sum()),
+        "unclassified_cities": int(
+            frame.loc[missing_climate, "ID_UC_G0"].nunique()
+        ),
+        "outside_configured_groups_rows": int(outside_groups.sum()),
+        "outside_configured_groups_cities": int(
+            frame.loc[outside_groups, "ID_UC_G0"].nunique()
+        ),
+    }
 
 
 def summarize_trends(
@@ -353,6 +383,18 @@ def build_city_month_slot_trend_figures(config_path: Path) -> Path:
             [source.as_posix()],
         ).df()
         max_decomposition_error = _validate_trends(frame, config)
+        exclusions = _climate_exclusion_counts(
+            frame, config["climate_groups"]
+        )
+        print(
+            "[INFO] Climate grouping exclusions: "
+            f"unclassified={exclusions['unclassified_rows']:,} rows/"
+            f"{exclusions['unclassified_cities']:,} cities; "
+            "outside configured groups="
+            f"{exclusions['outside_configured_groups_rows']:,} rows/"
+            f"{exclusions['outside_configured_groups_cities']:,} cities.",
+            flush=True,
+        )
         summary = summarize_trends(frame, config["climate_groups"])
         summary.to_csv(
             staging / "climate_month_slot_trend_summary.csv",
@@ -381,6 +423,7 @@ def build_city_month_slot_trend_figures(config_path: Path) -> Path:
             "config_sha256": _sha256(config_path),
             "climate_grouping": "first character of Köppen-Geiger climate class",
             "climate_groups_included": config["climate_groups"],
+            "climate_grouping_exclusions": exclusions,
             "city_level_identity": "beta_suhi = beta_urban - beta_rural",
             "max_absolute_city_level_decomposition_error": (
                 max_decomposition_error
