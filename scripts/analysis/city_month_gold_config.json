@@ -1,11 +1,11 @@
 {
   "paths": {
-    "pixel_lst": "../../data/processed/silver/pixel_lst/city_id=*/data.parquet",
-    "pixel_development": "../../data/processed/silver/pixel_development/data.parquet",
-    "rural_lst": "../../data/processed/silver/rural_lst/rural_*.parquet",
+    "pixel_lst": "../../data/processed/silver_1700/pixel_lst/city_id=*/data.parquet",
+    "pixel_development": "../../data/processed/silver_1700/pixel_development/data.parquet",
+    "rural_lst": "../../data/processed/silver_1700/rural_lst/rural_*.parquet",
     "city_metadata": "../../data/processed/city_metadata.parquet",
     "priority_city_ids": "../../data/priority_city_ids_1700.json",
-    "silver_manifest": "../../data/processed/silver/manifest.json",
+    "silver_manifest": "../../data/processed/silver_1700/manifest.json",
     "output_dir": "../../data/processed/gold/city_month_trends"
   },
   "study": {
