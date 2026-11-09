@@ -4,6 +4,7 @@
     "output_dir": "../../data/processed/result/city_month_slot_trend_figures_2003_2019"
   },
   "climate_groups": ["A", "B", "C", "D"],
+  "hemisphere": "all",
   "dpi": 240,
   "decomposition_tolerance": 1e-8
 }

@@ -12,6 +12,7 @@ MODULE_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(MODULE_DIR))
 
 from src.city_month_slot_trend_figures import (
+    _filter_trends_by_hemisphere,
     _validate_trends,
     build_city_month_slot_trend_figures,
     summarize_trends,
@@ -54,6 +55,7 @@ def _config(root: Path, source: Path, output: Path) -> Path:
             "output_dir": str(output),
         },
         "climate_groups": ["A", "C"],
+        "hemisphere": "all",
         "dpi": 72,
         "decomposition_tolerance": 1e-8,
     }
@@ -63,6 +65,19 @@ def _config(root: Path, source: Path, output: Path) -> Path:
 
 
 class CityMonthSlotTrendFigureTests(unittest.TestCase):
+    def test_hemisphere_filter_selects_requested_cities_and_excludes_equator(self):
+        frame = _trends()
+        frame.loc[frame["ID_UC_G0"].eq(2), "hemisphere"] = "south"
+        north, north_info = _filter_trends_by_hemisphere(frame, "north")
+        self.assertEqual(set(north["ID_UC_G0"]), {1})
+        self.assertEqual(north_info["selected_cities"], 1)
+        self.assertEqual(north_info["excluded_cities"], 1)
+
+        frame.loc[frame["ID_UC_G0"].eq(2), "hemisphere"] = "equator"
+        north, north_info = _filter_trends_by_hemisphere(frame, "north")
+        self.assertEqual(set(north["ID_UC_G0"]), {1})
+        self.assertEqual(north_info["excluded_equator_rows"], 48)
+
     def test_summary_has_median_iqr_and_city_count(self):
         summary = summarize_trends(_trends(), ["A", "C"])
         january = summary.loc[
@@ -127,6 +142,52 @@ class CityMonthSlotTrendFigureTests(unittest.TestCase):
             )
             self.assertEqual(
                 manifest["climate_grouping_exclusions"]["unclassified_cities"],
+                1,
+            )
+            self.assertEqual(manifest["hemisphere_filter"]["selection"], "all")
+            self.assertEqual(
+                manifest["hemisphere_filter"]["source_cities"],
+                2,
+            )
+
+    def test_builds_figures_for_selected_hemisphere(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "city_month_slot_trends.parquet"
+            connection = duckdb.connect(":memory:")
+            connection.register("trends", _trends())
+            connection.execute(
+                f"COPY trends TO '{source.as_posix()}' "
+                "(FORMAT PARQUET, COMPRESSION ZSTD)"
+            )
+            connection.close()
+
+            output = root / "north_figures"
+            config = _config(root, source, output)
+            config_data = json.loads(config.read_text(encoding="utf-8"))
+            config_data["hemisphere"] = "north"
+            config.write_text(json.dumps(config_data), encoding="utf-8")
+
+            self.assertEqual(
+                build_city_month_slot_trend_figures(config),
+                output,
+            )
+            summary = pd.read_csv(
+                output / "climate_month_slot_trend_summary.csv"
+            )
+            self.assertEqual(
+                summary.loc[
+                    summary["climate_group"].eq("A"),
+                    "n_cities",
+                ].max(),
+                1,
+            )
+            manifest = json.loads(
+                (output / "manifest.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(manifest["hemisphere_filter"]["selection"], "north")
+            self.assertEqual(
+                manifest["hemisphere_filter"]["selected_cities"],
                 1,
             )
 

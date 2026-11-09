@@ -90,6 +90,17 @@ def _load_config(config_path: Path) -> dict[str, Any]:
         )
     config["climate_groups"] = [group.upper() for group in climate_groups]
 
+    hemisphere = config.get("hemisphere", "all")
+    if not isinstance(hemisphere, str) or hemisphere.strip().lower() not in {
+        "all",
+        "north",
+        "south",
+    }:
+        raise ValueError(
+            "Config 'hemisphere' must be 'all', 'north', or 'south'."
+        )
+    config["hemisphere"] = hemisphere.strip().lower()
+
     dpi = config.get("dpi")
     if type(dpi) is not int or dpi < 72 or dpi > 1200:
         raise ValueError("Config 'dpi' must be an integer from 72 to 1200.")
@@ -159,6 +170,61 @@ def _validate_trends(frame: pd.DataFrame, config: dict[str, Any]) -> float:
     return max_error
 
 
+def _filter_trends_by_hemisphere(
+    frame: pd.DataFrame,
+    hemisphere: str,
+) -> tuple[pd.DataFrame, dict[str, int | str]]:
+    source_rows = len(frame)
+    source_cities = int(frame["ID_UC_G0"].nunique())
+    if hemisphere == "all":
+        return frame, {
+            "selection": "all",
+            "source_rows": source_rows,
+            "source_cities": source_cities,
+            "selected_rows": source_rows,
+            "selected_cities": source_cities,
+            "excluded_rows": 0,
+            "excluded_cities": 0,
+            "excluded_north_rows": 0,
+            "excluded_south_rows": 0,
+            "excluded_equator_rows": 0,
+            "excluded_missing_hemisphere_rows": 0,
+        }
+
+    labels = frame["hemisphere"].astype("string").str.strip().str.lower()
+    invalid = labels.notna() & ~labels.isin({"north", "south", "equator"})
+    if invalid.any():
+        examples = sorted(labels.loc[invalid].unique().tolist())
+        raise ValueError(
+            f"Trend table contains invalid hemisphere labels: {examples[:10]}."
+        )
+
+    selected_mask = labels.eq(hemisphere).fillna(False)
+    selected = frame.loc[selected_mask].copy()
+    if selected.empty:
+        raise ValueError(
+            f"No city/month/slot trends matched hemisphere '{hemisphere}'."
+        )
+    excluded = frame.loc[~selected_mask]
+    return selected, {
+        "selection": hemisphere,
+        "source_rows": source_rows,
+        "source_cities": source_cities,
+        "selected_rows": len(selected),
+        "selected_cities": int(selected["ID_UC_G0"].nunique()),
+        "excluded_rows": len(excluded),
+        "excluded_cities": int(excluded["ID_UC_G0"].nunique()),
+        "excluded_north_rows": int(labels.eq("north").sum())
+        if hemisphere == "south"
+        else 0,
+        "excluded_south_rows": int(labels.eq("south").sum())
+        if hemisphere == "north"
+        else 0,
+        "excluded_equator_rows": int(labels.eq("equator").sum()),
+        "excluded_missing_hemisphere_rows": int(labels.isna().sum()),
+    }
+
+
 def _climate_exclusion_counts(
     frame: pd.DataFrame,
     climate_groups: list[str],
@@ -225,6 +291,7 @@ def summarize_trends(
 def _plot_figure_one(
     summary: pd.DataFrame,
     climate_groups: list[str],
+    hemisphere: str,
 ):
     figure, axes = plt.subplots(
         len(climate_groups),
@@ -284,7 +351,8 @@ def _plot_figure_one(
                 )
     figure.suptitle(
         "Figure 1. Climate-specific monthly SUHI trends\n"
-        "Median city slope with interquartile range; n = eligible cities",
+        f"Hemisphere: {hemisphere}; median city slope with interquartile "
+        "range; n = eligible cities",
         y=0.995,
         fontsize=14,
     )
@@ -295,6 +363,7 @@ def _plot_figure_one(
 def _plot_figure_two(
     summary: pd.DataFrame,
     climate_groups: list[str],
+    hemisphere: str,
 ):
     figure, axes = plt.subplots(
         len(climate_groups),
@@ -348,7 +417,7 @@ def _plot_figure_two(
     figure.suptitle(
         "Figure 2. Urban–Rural trend decomposition\n"
         "City-level βSUHI = βU − βR is checked before summarization; "
-        "climate medians are shown independently",
+        f"climate medians are shown independently; hemisphere: {hemisphere}",
         y=0.995,
         fontsize=14,
     )
@@ -382,6 +451,18 @@ def build_city_month_slot_trend_figures(config_path: Path) -> Path:
             "SELECT * FROM read_parquet(?)",
             [source.as_posix()],
         ).df()
+        frame, hemisphere_filter = _filter_trends_by_hemisphere(
+            frame, config["hemisphere"]
+        )
+        print(
+            f"[INFO] Hemisphere filter={hemisphere_filter['selection']}; "
+            f"cities={hemisphere_filter['selected_cities']:,}/"
+            f"{hemisphere_filter['source_cities']:,}; "
+            f"rows={hemisphere_filter['selected_rows']:,}/"
+            f"{hemisphere_filter['source_rows']:,}; "
+            f"excluded rows={hemisphere_filter['excluded_rows']:,}.",
+            flush=True,
+        )
         max_decomposition_error = _validate_trends(frame, config)
         exclusions = _climate_exclusion_counts(
             frame, config["climate_groups"]
@@ -403,13 +484,15 @@ def build_city_month_slot_trend_figures(config_path: Path) -> Path:
         )
 
         figure_one = _plot_figure_one(
-            summary, config["climate_groups"]
+            summary, config["climate_groups"], config["hemisphere"]
         )
         figure_one_path = staging / "figure_1_climate_monthly_suhi_trends.png"
         figure_one.savefig(figure_one_path, dpi=config["dpi"], bbox_inches="tight")
         plt.close(figure_one)
 
-        figure_two = _plot_figure_two(summary, config["climate_groups"])
+        figure_two = _plot_figure_two(
+            summary, config["climate_groups"], config["hemisphere"]
+        )
         figure_two_path = staging / "figure_2_urban_rural_trend_decomposition.png"
         figure_two.savefig(figure_two_path, dpi=config["dpi"], bbox_inches="tight")
         plt.close(figure_two)
@@ -423,6 +506,7 @@ def build_city_month_slot_trend_figures(config_path: Path) -> Path:
             "config_sha256": _sha256(config_path),
             "climate_grouping": "first character of Köppen-Geiger climate class",
             "climate_groups_included": config["climate_groups"],
+            "hemisphere_filter": hemisphere_filter,
             "climate_grouping_exclusions": exclusions,
             "city_level_identity": "beta_suhi = beta_urban - beta_rural",
             "max_absolute_city_level_decomposition_error": (

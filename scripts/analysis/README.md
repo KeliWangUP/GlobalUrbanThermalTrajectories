@@ -166,7 +166,13 @@ python scripts/analysis/plot_city_month_slot_trends.py
 The input, output, Köppen major groups, and figure resolution are configured in
 [`city_month_slot_trend_figures_config.json`](./city_month_slot_trend_figures_config.json).
 By default, the script groups full Köppen classes by their first letter and
-plots A/B/C/D; add E to `climate_groups` to include polar cities.
+plots A/B/C/D; add E to `climate_groups` to include polar cities. The
+`hemisphere` setting can be `all`, `north`, or `south`. It defaults to `all`
+to preserve the pooled analysis; choosing north or south filters the city-level
+trend rows before climate summaries and plotting. Equatorial and missing-
+hemisphere rows are excluded from north/south runs. The selected hemisphere,
+source and selected city/row counts, and exclusions are recorded in the
+manifest and run log.
 
 Figure 1 shows each group's monthly city-level SUHI slope median, IQR, and
 eligible-city count, with Terra/Aqua and day/night in separate panels.
