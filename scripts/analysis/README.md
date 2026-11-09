@@ -188,6 +188,42 @@ The output directory includes both figures, the city-level summary CSV, and
 a manifest recording provenance and the decomposition check; it is never
 overwritten.
 
+### City/season/slot trend Gold table and figures
+
+Build city-level seasonal trends from `suhi_seasonal.parquet` with:
+
+```bash
+python scripts/analysis/build_city_season_slot_trends.py
+```
+
+The source path, year window, minimum number of valid seasons, and output
+directory are set in
+[`city_season_slot_trends_config.json`](./city_season_slot_trends_config.json).
+By default, the script fits 2003–2019 OLS slopes separately for each city,
+season (DJF/MAM/JJA/SON), and Terra/Aqua day/night slot. It requires the
+season-specific QC flag and finite urban, rural, and SUHI means; the minimum
+valid-year rule defaults to 15. The trend table includes β and standard error
+for urban, rural, and SUHI LST, plus latitude, climate, hemisphere, and the
+number of valid seasonal observations.
+
+Generate the matching climate summaries and figures with:
+
+```bash
+python scripts/analysis/plot_city_season_slot_trends.py
+```
+
+[`city_season_slot_trend_figures_config.json`](./city_season_slot_trend_figures_config.json)
+controls the trend input, figure output, climate major groups, and
+`hemisphere` (`all`, `north`, or `south`). Figure 1 displays each climate
+group's seasonal SUHI slope median, IQR, and city count; Figure 2 displays the
+urban, rural, and SUHI slope distributions. Both separate Terra/Aqua and
+day/night. The city-level βSUHI = βU − βR identity is checked before
+aggregation, while climate-group medians are reported independently. These
+are the source table's fixed DJF/MAM/JJA/SON seasons: selecting a hemisphere
+filters cities but does not shift seasons to local winter or summer. Missing
+climate rows are excluded from climate-group plots and counted in the
+manifest. Existing output directories are never overwritten.
+
 ### Paired-month city-level SUHI trend comparisons
 
 Run the requested D-February/July and C-April/July paired comparisons with:
