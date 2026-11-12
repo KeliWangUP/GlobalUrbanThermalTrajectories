@@ -83,7 +83,11 @@ def _source_columns() -> set[str]:
         "ID_UC_G0",
         "season_year",
         "season",
+        "centroid_lon",
         "centroid_lat",
+        "city_area_km2",
+        "country",
+        "GC_DEV_USR",
         "koppen_geiger_class",
     }
     for slot in SLOTS:
@@ -137,7 +141,11 @@ def _validate_source(
             SELECT ID_UC_G0
             FROM read_parquet(?)
             GROUP BY ID_UC_G0
-            HAVING COUNT(DISTINCT centroid_lat) > 1
+            HAVING COUNT(DISTINCT centroid_lon) > 1
+                OR COUNT(DISTINCT centroid_lat) > 1
+                OR COUNT(DISTINCT city_area_km2) > 1
+                OR COUNT(DISTINCT country) > 1
+                OR COUNT(DISTINCT GC_DEV_USR) > 1
                 OR COUNT(DISTINCT koppen_geiger_class) > 1
         )
         """,
@@ -145,8 +153,32 @@ def _validate_source(
     ).fetchone()[0]
     if inconsistent_metadata:
         raise ValueError(
-            "Seasonal SUHI table has inconsistent latitude or climate "
-            "metadata within a city."
+            "Seasonal SUHI table has inconsistent location, area, country, "
+            "region, or climate metadata within a city."
+        )
+
+    invalid_city_metadata = connection.execute(
+        """
+        SELECT COUNT(*)
+        FROM read_parquet(?)
+        WHERE centroid_lon IS NULL
+           OR NOT isfinite(CAST(centroid_lon AS DOUBLE))
+           OR ABS(CAST(centroid_lon AS DOUBLE)) > 180
+           OR centroid_lat IS NULL
+           OR NOT isfinite(CAST(centroid_lat AS DOUBLE))
+           OR ABS(CAST(centroid_lat AS DOUBLE)) > 90
+           OR city_area_km2 IS NULL
+           OR NOT isfinite(CAST(city_area_km2 AS DOUBLE))
+           OR CAST(city_area_km2 AS DOUBLE) <= 0
+           OR country IS NULL OR TRIM(CAST(country AS VARCHAR)) = ''
+           OR GC_DEV_USR IS NULL OR TRIM(CAST(GC_DEV_USR AS VARCHAR)) = ''
+        """,
+        [source.as_posix()],
+    ).fetchone()[0]
+    if invalid_city_metadata:
+        raise ValueError(
+            "Seasonal SUHI table contains invalid centroid coordinates, "
+            "city area, country, or GC_DEV_USR region metadata."
         )
 
     invalid_qc_types = [
@@ -202,7 +234,11 @@ def _trend_query(
                 CAST(ID_UC_G0 AS BIGINT) AS ID_UC_G0,
                 CAST(season_year AS INTEGER) AS season_year,
                 CAST(season AS VARCHAR) AS season,
+                CAST(centroid_lon AS DOUBLE) AS centroid_lon,
                 CAST(centroid_lat AS DOUBLE) AS centroid_lat,
+                CAST(city_area_km2 AS DOUBLE) AS city_area_km2,
+                CAST(country AS VARCHAR) AS country,
+                CAST(GC_DEV_USR AS VARCHAR) AS GC_DEV_USR,
                 CAST(koppen_geiger_class AS VARCHAR) AS climate,
                 {", ".join(
                     f"CAST({column} AS DOUBLE) AS {column}"
@@ -221,7 +257,11 @@ def _trend_query(
             SELECT
                 seasonal.ID_UC_G0,
                 seasonal.climate,
+                seasonal.centroid_lon,
                 seasonal.centroid_lat,
+                seasonal.city_area_km2,
+                seasonal.country,
+                seasonal.GC_DEV_USR,
                 CASE
                     WHEN seasonal.centroid_lat > 0 THEN 'north'
                     WHEN seasonal.centroid_lat < 0 THEN 'south'
@@ -251,7 +291,11 @@ def _trend_query(
             SELECT
                 ID_UC_G0,
                 climate,
+                centroid_lon,
                 centroid_lat,
+                city_area_km2,
+                country,
+                GC_DEV_USR,
                 hemisphere,
                 season,
                 slot,
@@ -269,13 +313,27 @@ def _trend_query(
                 regr_syy(urban, season_year) AS syy_urban,
                 regr_syy(rural, season_year) AS syy_rural
             FROM observations
-            GROUP BY ID_UC_G0, climate, centroid_lat, hemisphere, season, slot
+            GROUP BY
+                ID_UC_G0,
+                climate,
+                centroid_lon,
+                centroid_lat,
+                city_area_km2,
+                country,
+                GC_DEV_USR,
+                hemisphere,
+                season,
+                slot
             HAVING COUNT(*) >= {minimum_valid_years}
         )
         SELECT
             ID_UC_G0,
             climate,
+            centroid_lon,
             centroid_lat,
+            city_area_km2,
+            country,
+            GC_DEV_USR,
             hemisphere,
             season,
             slot,

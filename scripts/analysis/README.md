@@ -225,8 +225,9 @@ By default, the script fits 2003–2019 OLS slopes separately for each city,
 season (DJF/MAM/JJA/SON), and Terra/Aqua day/night slot. It requires the
 season-specific QC flag and finite urban, rural, and SUHI means; the minimum
 valid-year rule defaults to 15. The trend table includes β and standard error
-for urban, rural, and SUHI LST, plus latitude, climate, hemisphere, and the
-number of valid seasonal observations.
+for urban, rural, and SUHI LST, plus centroid longitude/latitude, GHSL area,
+country, `GC_DEV_USR` region, climate, hemisphere, and the number of valid
+seasonal observations.
 
 Generate the matching climate summaries and figures with:
 
@@ -283,8 +284,12 @@ selects the γ Parquet, Köppen major group, optional subclasses, and hemisphere
 day/night slot's city-level γSUHI median, IQR, and city count. Figure 2 shows
 the corresponding γUrban, γRural, and γSUHI distributions. The city-level
 identity γSUHI = γUrban − γRural is checked before summarization; subclass
-medians are calculated independently. The output directory includes both
-figures, a summary CSV, and a provenance manifest, and is never overwritten.
+medians are calculated independently. Figures 3 and 4 show city-level
+γUrban-versus-γRural scatterplots, colored by Köppen subclass and GHSL
+`GC_DEV_USR` region, respectively. Both retain the configured hemisphere and
+subclass selection and use y=x as the synchrony reference; vertical distance
+from the line is γSUHI. The output directory includes all four figures, a
+summary CSV, and a provenance manifest, and is never overwritten.
 
 ### Seasonal trends by Köppen subclass within one major climate group
 

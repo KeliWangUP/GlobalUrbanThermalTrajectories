@@ -58,7 +58,11 @@ def _seasonal_trends():
                     {
                         "ID_UC_G0": city_id,
                         "climate": climate,
+                        "centroid_lon": float(city_id),
                         "centroid_lat": latitude,
+                        "city_area_km2": 100.0 + city_id,
+                        "country": "Country A" if city_id == 1 else "Country B",
+                        "GC_DEV_USR": "Region A" if city_id == 1 else "Region B",
                         "hemisphere": hemisphere,
                         "season": season,
                         "slot": slot,
@@ -131,6 +135,21 @@ class CitySeasonalTrendContrastTests(unittest.TestCase):
             )
             self.assertTrue(all(row[5:8] == (1.0, 2.0, 1.0) for row in north))
             self.assertTrue(all(row[5:8] == (2.0, 3.0, 1.0) for row in south))
+
+            connection = duckdb.connect(":memory:")
+            metadata_rows = connection.execute(
+                """
+                SELECT centroid_lon, city_area_km2, country, GC_DEV_USR
+                FROM read_parquet(?)
+                WHERE ID_UC_G0 = 1 AND slot = 'terra_day'
+                """,
+                [output_path.as_posix()],
+            ).fetchone()
+            connection.close()
+            self.assertEqual(
+                metadata_rows,
+                (1.0, 101.0, "Country A", "Region A"),
+            )
 
             manifest = json.loads(
                 (output_dir / "manifest.json").read_text(encoding="utf-8")

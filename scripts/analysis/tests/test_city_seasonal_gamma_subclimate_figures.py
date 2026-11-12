@@ -32,6 +32,9 @@ def _gamma_trends():
                 {
                     "ID_UC_G0": city_id,
                     "climate": climate,
+                    "GC_DEV_USR": (
+                        "Region 1" if hemisphere == "north" else "Region 2"
+                    ),
                     "centroid_lat": 30.0 if hemisphere == "north" else -30.0,
                     "hemisphere": hemisphere,
                     "slot": slot,
@@ -105,6 +108,18 @@ class CitySeasonalGammaSubclimateFigureTests(unittest.TestCase):
                     / "figure_2_subclimate_gamma_decomposition.png"
                 ).is_file()
             )
+            self.assertTrue(
+                (
+                    output_dir
+                    / "figure_3_city_seasonal_synchrony_by_subclimate.png"
+                ).is_file()
+            )
+            self.assertTrue(
+                (
+                    output_dir
+                    / "figure_4_city_seasonal_synchrony_by_region.png"
+                ).is_file()
+            )
             summary = pd.read_csv(
                 output_dir / "subclimate_seasonal_gamma_summary.csv"
             )
@@ -116,6 +131,12 @@ class CitySeasonalGammaSubclimateFigureTests(unittest.TestCase):
             self.assertEqual(manifest["major_climate_group"], "C")
             self.assertEqual(manifest["subclimate_classes"], ["Cfa"])
             self.assertEqual(manifest["hemisphere_filter"]["selection"], "north")
+            self.assertEqual(
+                manifest["synchrony_scatter"]["x"], "gamma_rural"
+            )
+            self.assertEqual(
+                manifest["synchrony_scatter"]["y"], "gamma_urban"
+            )
 
 
 if __name__ == "__main__":

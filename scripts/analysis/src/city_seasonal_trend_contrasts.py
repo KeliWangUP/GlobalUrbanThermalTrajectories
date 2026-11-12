@@ -24,7 +24,11 @@ SEASONS = ("DJF", "MAM", "JJA", "SON")
 REQUIRED_COLUMNS = {
     "ID_UC_G0",
     "climate",
+    "centroid_lon",
     "centroid_lat",
+    "city_area_km2",
+    "country",
+    "GC_DEV_USR",
     "hemisphere",
     "season",
     "slot",
@@ -126,7 +130,16 @@ def _validate_source(
            OR slot IS NULL OR slot NOT IN ({", ".join(_quote_string(s) for s in SLOTS)})
            OR hemisphere IS NULL
            OR LOWER(TRIM(hemisphere)) NOT IN ('north', 'south', 'equator')
+           OR centroid_lon IS NULL
+           OR NOT isfinite(CAST(centroid_lon AS DOUBLE))
+           OR ABS(CAST(centroid_lon AS DOUBLE)) > 180
            OR centroid_lat IS NULL OR NOT isfinite(CAST(centroid_lat AS DOUBLE))
+           OR ABS(CAST(centroid_lat AS DOUBLE)) > 90
+           OR city_area_km2 IS NULL
+           OR NOT isfinite(CAST(city_area_km2 AS DOUBLE))
+           OR CAST(city_area_km2 AS DOUBLE) <= 0
+           OR country IS NULL OR TRIM(CAST(country AS VARCHAR)) = ''
+           OR GC_DEV_USR IS NULL OR TRIM(CAST(GC_DEV_USR AS VARCHAR)) = ''
            OR n_valid_years IS NULL OR n_valid_years < 2
            OR beta_suhi IS NULL OR NOT isfinite(CAST(beta_suhi AS DOUBLE))
            OR beta_urban IS NULL OR NOT isfinite(CAST(beta_urban AS DOUBLE))
@@ -146,7 +159,11 @@ def _validate_source(
             SELECT ID_UC_G0
             FROM read_parquet({parquet_path})
             GROUP BY ID_UC_G0
-            HAVING COUNT(DISTINCT centroid_lat) > 1
+            HAVING COUNT(DISTINCT centroid_lon) > 1
+                OR COUNT(DISTINCT centroid_lat) > 1
+                OR COUNT(DISTINCT city_area_km2) > 1
+                OR COUNT(DISTINCT country) > 1
+                OR COUNT(DISTINCT GC_DEV_USR) > 1
                 OR COUNT(DISTINCT LOWER(TRIM(hemisphere))) > 1
                 OR COUNT(DISTINCT climate) > 1
         )
@@ -154,8 +171,8 @@ def _validate_source(
     ).fetchone()[0]
     if inconsistent_metadata:
         raise ValueError(
-            "Seasonal trend table has inconsistent city latitude, hemisphere, "
-            "or climate metadata."
+            "Seasonal trend table has inconsistent city location, area, "
+            "country, region, hemisphere, or climate metadata."
         )
 
     invalid_hemisphere_latitude = connection.execute(
@@ -230,7 +247,11 @@ def _contrast_query(source: Path) -> str:
             SELECT
                 ID_UC_G0,
                 climate,
+                CAST(centroid_lon AS DOUBLE) AS centroid_lon,
                 CAST(centroid_lat AS DOUBLE) AS centroid_lat,
+                CAST(city_area_km2 AS DOUBLE) AS city_area_km2,
+                CAST(country AS VARCHAR) AS country,
+                CAST(GC_DEV_USR AS VARCHAR) AS GC_DEV_USR,
                 LOWER(TRIM(hemisphere)) AS hemisphere,
                 season,
                 slot,
@@ -245,7 +266,11 @@ def _contrast_query(source: Path) -> str:
             SELECT
                 summer.ID_UC_G0,
                 summer.climate,
+                summer.centroid_lon,
                 summer.centroid_lat,
+                summer.city_area_km2,
+                summer.country,
+                summer.GC_DEV_USR,
                 summer.hemisphere,
                 summer.slot,
                 CASE
@@ -280,7 +305,11 @@ def _contrast_query(source: Path) -> str:
         SELECT
             ID_UC_G0,
             climate,
+            centroid_lon,
             centroid_lat,
+            city_area_km2,
+            country,
+            GC_DEV_USR,
             hemisphere,
             slot,
             summer_season,

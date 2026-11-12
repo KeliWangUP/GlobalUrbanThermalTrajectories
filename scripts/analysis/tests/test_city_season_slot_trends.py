@@ -30,7 +30,11 @@ def _write_seasonal_source(path: Path) -> None:
                     "ID_UC_G0": city_id,
                     "season_year": year,
                     "season": season,
+                    "centroid_lon": float(city_id),
                     "centroid_lat": latitude,
+                    "city_area_km2": 100.0 + city_id,
+                    "country": "Country A" if city_id == 1 else "Country B",
+                    "GC_DEV_USR": "Region A" if city_id == 1 else "Region B",
                     "koppen_geiger_class": climate,
                 }
                 for slot_index, slot in enumerate(SLOTS):
@@ -87,7 +91,8 @@ class CitySeasonSlotTrendTests(unittest.TestCase):
             connection = duckdb.connect(":memory:")
             row = connection.execute(
                 """
-                SELECT climate, hemisphere, season, slot,
+                SELECT climate, centroid_lon, centroid_lat, city_area_km2,
+                       country, GC_DEV_USR, hemisphere, season, slot,
                        beta_suhi, beta_urban, beta_rural,
                        se_suhi, n_valid_years
                 FROM read_parquet(?)
@@ -105,12 +110,16 @@ class CitySeasonSlotTrendTests(unittest.TestCase):
             ).fetchone()[0]
             connection.close()
 
-            self.assertEqual(row[:4], ("Af", "north", "DJF", "terra_day"))
-            self.assertAlmostEqual(row[4], 1.0)
-            self.assertAlmostEqual(row[5], 2.0)
-            self.assertAlmostEqual(row[6], 1.0)
-            self.assertAlmostEqual(row[7], 0.0, places=10)
-            self.assertEqual(row[8], 16)
+            self.assertEqual(
+                row[:9],
+                ("Af", 1.0, 20.0, 101.0, "Country A", "Region A", "north",
+                 "DJF", "terra_day"),
+            )
+            self.assertAlmostEqual(row[9], 1.0)
+            self.assertAlmostEqual(row[10], 2.0)
+            self.assertAlmostEqual(row[11], 1.0)
+            self.assertAlmostEqual(row[12], 0.0, places=10)
+            self.assertEqual(row[13], 16)
             self.assertEqual(missing_qc_fit_count, 0)
             self.assertTrue((output_dir / "manifest.json").is_file())
 

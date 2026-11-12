@@ -17,6 +17,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.lines import Line2D
 
 from src.city_season_slot_trend_figures import (
     METRICS as BETA_METRICS,
@@ -41,6 +42,7 @@ REQUIRED_COLUMNS = {
     "gamma_suhi",
     "gamma_urban",
     "gamma_rural",
+    "GC_DEV_USR",
 }
 
 
@@ -144,6 +146,12 @@ def _validate_gamma_trends(
         raise ValueError("Seasonal gamma table has duplicate city/slot keys.")
     if frame["ID_UC_G0"].isna().any():
         raise ValueError("Seasonal gamma table contains null city IDs.")
+    if frame["GC_DEV_USR"].isna().any() or (
+        frame["GC_DEV_USR"].astype("string").str.strip().eq("").any()
+    ):
+        raise ValueError(
+            "Seasonal gamma table contains missing GC_DEV_USR regions."
+        )
     if frame["slot"].isna().any():
         raise ValueError("Seasonal gamma table contains null observation slots.")
     valid_slots = {slot for slot, _, _, _ in SLOTS}
@@ -157,14 +165,17 @@ def _validate_gamma_trends(
         raise ValueError(
             "Seasonal gamma table must contain only north/south hemisphere rows."
         )
+    hemisphere_labels = (
+        frame["hemisphere"].astype("string").str.strip().str.lower()
+    )
     direction_is_valid = (
         (
-            hemisphere.eq("north")
+            hemisphere_labels.eq("north")
             & frame["summer_season"].eq("JJA")
             & frame["winter_season"].eq("DJF")
         )
         | (
-            hemisphere.eq("south")
+            hemisphere_labels.eq("south")
             & frame["summer_season"].eq("DJF")
             & frame["winter_season"].eq("JJA")
         )
@@ -325,6 +336,108 @@ def _plot_figure_two(summary: pd.DataFrame, subclasses: list[str]):
     return figure
 
 
+def _plot_synchrony_scatter(
+    frame: pd.DataFrame,
+    category_column: str,
+    category_label: str,
+    major_climate_group: str,
+    hemisphere: str,
+):
+    category_values = frame[category_column].astype("string").str.strip()
+    categories = sorted(category_values.unique().tolist())
+    color_map = plt.get_cmap("tab20")
+    colors = color_map(np.linspace(0, 1, max(len(categories), 1)))
+    category_colors = dict(zip(categories, colors))
+
+    max_abs_value = max(
+        float(frame["gamma_rural"].abs().max()),
+        float(frame["gamma_urban"].abs().max()),
+    )
+    limit = max(max_abs_value * 1.05, 0.1)
+    figure, axes = plt.subplots(
+        1,
+        len(SLOTS),
+        figsize=(19, 5.8),
+        squeeze=False,
+        sharex=True,
+        sharey=True,
+    )
+    for column_index, (slot, slot_label, _, _) in enumerate(SLOTS):
+        axis = axes[0, column_index]
+        slot_frame = frame.loc[frame["slot"].eq(slot)]
+        slot_categories = category_values.loc[slot_frame.index]
+        for category in categories:
+            category_rows = slot_frame.loc[
+                slot_categories.eq(category).to_numpy()
+            ]
+            if category_rows.empty:
+                continue
+            axis.scatter(
+                category_rows["gamma_rural"],
+                category_rows["gamma_urban"],
+                color=category_colors[category],
+                s=15,
+                alpha=0.65,
+                linewidths=0,
+                label=category if column_index == 0 else "_nolegend_",
+            )
+        axis.plot(
+            [-limit, limit],
+            [-limit, limit],
+            color="0.2",
+            linestyle="--",
+            linewidth=1.1,
+        )
+        axis.set_xlim(-limit, limit)
+        axis.set_ylim(-limit, limit)
+        axis.set_aspect("equal", adjustable="box")
+        axis.grid(alpha=0.2)
+        axis.set_title(f"{slot_label} (n={len(slot_frame):,})")
+        axis.set_xlabel("γR (°C/decade)")
+        if column_index == 0:
+            axis.set_ylabel("γU (°C/decade)")
+
+    legend_handles = [
+        Line2D(
+            [0],
+            [0],
+            marker="o",
+            linestyle="",
+            markersize=6,
+            markerfacecolor=category_colors[category],
+            markeredgecolor="none",
+            label=category,
+        )
+        for category in categories
+    ]
+    legend_handles.append(
+        Line2D(
+            [0],
+            [0],
+            color="0.2",
+            linestyle="--",
+            linewidth=1.1,
+            label="y = x (γSUHI = 0)",
+        )
+    )
+    figure.suptitle(
+        f"City-level seasonal trend synchrony by {category_label}\n"
+        f"Major climate {major_climate_group}; hemisphere: {hemisphere}; "
+        "above/below y=x indicates positive/negative γSUHI",
+        y=0.99,
+        fontsize=13,
+    )
+    figure.legend(
+        handles=legend_handles,
+        loc="lower center",
+        ncol=min(len(legend_handles), 5),
+        frameon=False,
+        bbox_to_anchor=(0.5, 0.0),
+    )
+    figure.tight_layout(rect=(0, 0.14, 1, 0.9))
+    return figure
+
+
 def build_city_seasonal_gamma_subclimate_figures(
     config_path: Path,
 ) -> Path:
@@ -414,6 +527,40 @@ def build_city_seasonal_gamma_subclimate_figures(
         )
         plt.close(figure_two)
 
+        scatter_subclimate = _plot_synchrony_scatter(
+            selected,
+            "climate",
+            "Köppen subclass",
+            config["major_climate_group"],
+            config["hemisphere"],
+        )
+        scatter_subclimate_path = (
+            staging / "figure_3_city_seasonal_synchrony_by_subclimate.png"
+        )
+        scatter_subclimate.savefig(
+            scatter_subclimate_path,
+            dpi=config["dpi"],
+            bbox_inches="tight",
+        )
+        plt.close(scatter_subclimate)
+
+        scatter_region = _plot_synchrony_scatter(
+            selected,
+            "GC_DEV_USR",
+            "GHSL region",
+            config["major_climate_group"],
+            config["hemisphere"],
+        )
+        scatter_region_path = (
+            staging / "figure_4_city_seasonal_synchrony_by_region.png"
+        )
+        scatter_region.savefig(
+            scatter_region_path,
+            dpi=config["dpi"],
+            bbox_inches="tight",
+        )
+        plt.close(scatter_region)
+
         manifest = {
             "format_version": 1,
             "created_at": datetime.now(timezone.utc).isoformat(),
@@ -434,6 +581,16 @@ def build_city_seasonal_gamma_subclimate_figures(
                 max_decomposition_error
             ),
             "decomposition_tolerance": config["decomposition_tolerance"],
+            "synchrony_scatter": {
+                "x": "gamma_rural",
+                "y": "gamma_urban",
+                "reference_line": "y = x",
+                "gamma_suhi_interpretation": "gamma_urban - gamma_rural",
+                "color_groups": {
+                    "subclimate": "climate",
+                    "region": "GC_DEV_USR",
+                },
+            },
             "summary_note": (
                 "Urban, rural, and SUHI subclass medians and IQRs are "
                 "computed independently across cities and are not additive."
@@ -441,6 +598,8 @@ def build_city_seasonal_gamma_subclimate_figures(
             "outputs": [
                 figure_one_path.name,
                 figure_two_path.name,
+                scatter_subclimate_path.name,
+                scatter_region_path.name,
                 summary_path.name,
             ],
         }
