@@ -224,6 +224,28 @@ filters cities but does not shift seasons to local winter or summer. Missing
 climate rows are excluded from climate-group plots and counted in the
 manifest. Existing output directories are never overwritten.
 
+### Seasonal trends by Köppen subclass within one major climate group
+
+To compare the smaller Köppen classes within one selected major climate group,
+run:
+
+```bash
+python scripts/analysis/plot_city_season_subclimate_trends.py
+```
+
+Configure `major_climate_group` as A–E in
+[`city_season_subclimate_trend_figures_config.json`](./city_season_subclimate_trend_figures_config.json).
+By default, an empty `subclimate_classes` list automatically includes all
+subclasses present in the trend input for that major group; set it to a list
+such as `["Cfa", "Cfb"]` to focus on selected subclasses. The same
+`hemisphere` switch (`all`, `north`, or `south`) is applied before climate
+subclass summaries. The generated pair of figures uses the seasonal SUHI
+median/IQR/city-count and urban–rural decomposition views described above,
+with each subplot row representing one Köppen subclass. A CSV summary and
+manifest record the selected climate group, subclasses, hemisphere, and
+city-level decomposition check. This plots an existing seasonal trend table;
+it does not re-fit the trends.
+
 ### Paired-month city-level SUHI trend comparisons
 
 Run the requested D-February/July and C-April/July paired comparisons with:
