@@ -1,0 +1,11 @@
+{
+  "paths": {
+    "trend_file": "../../data/processed/gold/city_annual_slot_trends_2003_2019/city_annual_slot_trends.parquet",
+    "output_dir": "../../data/processed/result/city_annual_subclimate_trends_C_all"
+  },
+  "major_climate_group": "C",
+  "subclimate_classes": [],
+  "hemisphere": "all",
+  "dpi": 240,
+  "decomposition_tolerance": 1e-8
+}

@@ -246,6 +246,38 @@ manifest record the selected climate group, subclasses, hemisphere, and
 city-level decomposition check. This plots an existing seasonal trend table;
 it does not re-fit the trends.
 
+### City/slot annual trend Gold table and figures
+
+Build city-level annual trends from `suhi_annual.parquet` with:
+
+```bash
+python scripts/analysis/build_city_annual_slot_trends.py
+```
+
+The source path, year window, minimum number of valid years, and output
+directory are set in
+[`city_annual_slot_trends_config.json`](./city_annual_slot_trends_config.json).
+By default, the script fits 2003–2019 OLS slopes separately for each city and
+Terra/Aqua day/night slot. It requires the annual slot-specific QC flag and
+finite urban, rural, and SUHI means. The output includes β, standard error,
+climate, hemisphere, latitude, and valid-year count.
+
+Generate annual figures grouped by Köppen subclass with:
+
+```bash
+python scripts/analysis/plot_city_annual_subclimate_trends.py
+```
+
+[`city_annual_subclimate_trend_figures_config.json`](./city_annual_subclimate_trend_figures_config.json)
+selects the trend table, output directory, major climate group (`A`–`E`),
+optional subclasses (an empty list includes all available subclasses), and
+hemisphere (`all`, `north`, or `south`). Figure 1 shows annual SUHI slope
+medians, IQRs, and eligible-city counts; Figure 2 shows the urban, rural, and
+SUHI slopes separately for each Terra/Aqua day/night slot. City-level
+βSUHI = βU − βR is checked before aggregation; climate-subclass medians are
+computed independently. The output directory includes both figures, a CSV
+summary, and a provenance manifest, and is never overwritten.
+
 ### Paired-month city-level SUHI trend comparisons
 
 Run the requested D-February/July and C-April/July paired comparisons with:

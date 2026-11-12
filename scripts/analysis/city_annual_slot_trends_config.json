@@ -1,0 +1,12 @@
+{
+  "paths": {
+    "annual_suhi_file": "../../data/processed/suhi_annual.parquet",
+    "output_dir": "../../data/processed/gold/city_annual_slot_trends_2003_2019"
+  },
+  "years": {
+    "start": 2003,
+    "end": 2019,
+    "minimum_valid_years": 15
+  },
+  "beta_scale_years": 10
+}
