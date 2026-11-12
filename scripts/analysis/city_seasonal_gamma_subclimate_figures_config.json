@@ -1,0 +1,11 @@
+{
+  "paths": {
+    "gamma_file": "../../data/processed/gold/city_seasonal_trend_contrasts_2003_2019/city_seasonal_trend_contrasts.parquet",
+    "output_dir": "../../data/processed/result/city_seasonal_gamma_subclimate_trends_C_all"
+  },
+  "major_climate_group": "C",
+  "subclimate_classes": [],
+  "hemisphere": "all",
+  "dpi": 240,
+  "decomposition_tolerance": 1e-8
+}

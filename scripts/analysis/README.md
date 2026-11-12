@@ -224,6 +224,46 @@ filters cities but does not shift seasons to local winter or summer. Missing
 climate rows are excluded from climate-group plots and counted in the
 manifest. Existing output directories are never overwritten.
 
+### Hemisphere-aware summer-minus-winter trend contrasts
+
+After building the city/season/slot trend table with
+`build_city_season_slot_trends.py`, calculate city-level seasonal contrasts
+with:
+
+```bash
+python scripts/analysis/build_city_seasonal_trend_contrasts.py
+```
+
+The input trend Parquet and output directory are configured in
+[`city_seasonal_trend_contrasts_config.json`](./city_seasonal_trend_contrasts_config.json).
+For each city and Terra/Aqua day/night slot, the script computes summer β
+minus winter β. It uses JJA−DJF in the Northern Hemisphere and DJF−JJA in the
+Southern Hemisphere, then computes `gamma_SUHI`, `gamma_urban`, and
+`gamma_rural`. The city-level identity
+`gamma_SUHI = gamma_urban − gamma_rural` is checked before publishing.
+Equatorial cities are excluded because this hemisphere-based summer/winter
+definition does not apply to them. City/slot records missing either required
+seasonal trend are excluded and counted in the manifest. The output is one
+row per complete city/slot pair, with the selected seasons, each seasonal β,
+and each γ; no output directory is overwritten.
+
+### Seasonal γ contrasts by Köppen subclass
+
+Visualize the city-level summer-minus-winter contrast table with:
+
+```bash
+python scripts/analysis/plot_city_seasonal_gamma_subclimate_trends.py
+```
+
+[`city_seasonal_gamma_subclimate_figures_config.json`](./city_seasonal_gamma_subclimate_figures_config.json)
+selects the γ Parquet, Köppen major group, optional subclasses, and hemisphere
+(`all`, `north`, or `south`). Figure 1 shows each subclass and Terra/Aqua
+day/night slot's city-level γSUHI median, IQR, and city count. Figure 2 shows
+the corresponding γUrban, γRural, and γSUHI distributions. The city-level
+identity γSUHI = γUrban − γRural is checked before summarization; subclass
+medians are calculated independently. The output directory includes both
+figures, a summary CSV, and a provenance manifest, and is never overwritten.
+
 ### Seasonal trends by Köppen subclass within one major climate group
 
 To compare the smaller Köppen classes within one selected major climate group,

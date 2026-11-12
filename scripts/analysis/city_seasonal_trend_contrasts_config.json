@@ -1,0 +1,7 @@
+{
+  "paths": {
+    "seasonal_trend_file": "../../data/processed/gold/city_season_slot_trends_2003_2019/city_season_slot_trends.parquet",
+    "output_dir": "../../data/processed/gold/city_seasonal_trend_contrasts_2003_2019"
+  },
+  "decomposition_tolerance": 1e-8
+}
