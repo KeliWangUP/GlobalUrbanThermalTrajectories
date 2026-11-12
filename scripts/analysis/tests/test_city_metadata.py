@@ -69,7 +69,12 @@ class CityMetadataTests(unittest.TestCase):
             transform(to_mollweide, box(-2, -14, 2, -10))
         ]
         boundaries = gpd.GeoDataFrame(
-            {"ID_UC_G0": [10, 20]},
+            {
+                "ID_UC_G0": [10, 20],
+                "GC_UCA_KM2": [16.0, 25.0],
+                "GC_CNT_GAD": ["Country A", "Country B"],
+                "GC_DEV_USR": ["Region A", "Region B"]
+            },
             geometry=geometries,
             crs="ESRI:54009"
         )
@@ -90,15 +95,23 @@ class CityMetadataTests(unittest.TestCase):
             metadata.columns.tolist(),
             [
                 "ID_UC_G0",
+                "centroid_lon",
                 "centroid_lat",
+                "city_area_km2",
+                "country",
+                "GC_DEV_USR",
                 "koppen_geiger_code",
                 "koppen_geiger_class",
                 "koppen_geiger_macro_group"
             ]
         )
         self.assertEqual(metadata["ID_UC_G0"].tolist(), [10, 20])
+        self.assertTrue(metadata["centroid_lon"].abs().lt(0.1).all())
         self.assertGreater(metadata.loc[0, "centroid_lat"], 0)
         self.assertLess(metadata.loc[1, "centroid_lat"], 0)
+        self.assertEqual(metadata["city_area_km2"].tolist(), [16.0, 25.0])
+        self.assertEqual(metadata["country"].tolist(), ["Country A", "Country B"])
+        self.assertEqual(metadata["GC_DEV_USR"].tolist(), ["Region A", "Region B"])
         self.assertEqual(
             metadata["koppen_geiger_code"].tolist(),
             [1, 29]
@@ -118,7 +131,12 @@ class CityMetadataTests(unittest.TestCase):
             crs="ESRI:54009"
         ).iloc[0]
         boundaries = gpd.GeoDataFrame(
-            {"ID_UC_G0": [10]},
+            {
+                "ID_UC_G0": [10],
+                "GC_UCA_KM2": [1.0],
+                "GC_CNT_GAD": ["Country A"],
+                "GC_DEV_USR": ["Region A"]
+            },
             geometry=[invalid_polygon],
             crs="ESRI:54009"
         )
@@ -135,6 +153,7 @@ class CityMetadataTests(unittest.TestCase):
             )
 
         self.assertEqual(repaired_count, 1)
+        self.assertTrue(metadata["centroid_lon"].between(-180, 180).all())
         self.assertTrue(metadata["centroid_lat"].between(-90, 90).all())
 
     def test_zero_raster_class_is_stored_as_missing_climate(self) -> None:
@@ -144,7 +163,12 @@ class CityMetadataTests(unittest.TestCase):
             always_xy=True
         ).transform
         boundary = gpd.GeoDataFrame(
-            {"ID_UC_G0": [10]},
+            {
+                "ID_UC_G0": [10],
+                "GC_UCA_KM2": [16.0],
+                "GC_CNT_GAD": ["Country A"],
+                "GC_DEV_USR": ["Region A"]
+            },
             geometry=[transform(to_mollweide, box(-2, 10, 2, 14))],
             crs="ESRI:54009"
         )
@@ -170,7 +194,11 @@ class CityMetadataTests(unittest.TestCase):
         })
         metadata = pd.DataFrame({
             "ID_UC_G0": [10, 20],
+            "centroid_lon": [1.0, 2.0],
             "centroid_lat": [12.0, -12.0],
+            "city_area_km2": [100.0, 200.0],
+            "country": ["Country A", "Country B"],
+            "GC_DEV_USR": ["Region A", "Region B"],
             "koppen_geiger_code": pd.array([1, None], dtype="Int64"),
             "koppen_geiger_class": ["Af", None],
             "koppen_geiger_macro_group": ["Tropical", None]
@@ -178,7 +206,20 @@ class CityMetadataTests(unittest.TestCase):
 
         merged = merge_city_metadata(panel, metadata, CZ_MACRO_GROUPS)
 
+        self.assertEqual(merged["centroid_lon"].tolist(), [1.0, 1.0, 2.0])
         self.assertEqual(merged["centroid_lat"].tolist(), [12.0, 12.0, -12.0])
+        self.assertEqual(
+            merged["city_area_km2"].tolist(),
+            [100.0, 100.0, 200.0]
+        )
+        self.assertEqual(
+            merged["country"].tolist(),
+            ["Country A", "Country A", "Country B"]
+        )
+        self.assertEqual(
+            merged["GC_DEV_USR"].tolist(),
+            ["Region A", "Region A", "Region B"]
+        )
         self.assertEqual(
             merged["koppen_geiger_class"].tolist(),
             ["Af", "Af", None]
@@ -192,14 +233,22 @@ class CityMetadataTests(unittest.TestCase):
     def test_replaces_existing_city_metadata_when_remerging(self) -> None:
         panel = pd.DataFrame({
             "ID_UC_G0": [10],
+            "centroid_lon": [-10.0],
             "centroid_lat": [-55.0],
+            "city_area_km2": [55.0],
+            "country": ["Old Country"],
+            "GC_DEV_USR": ["Old Region"],
             "koppen_geiger_code": [4],
             "koppen_geiger_class": ["BWh"],
             "koppen_geiger_macro_group": ["Arid"]
         })
         metadata = pd.DataFrame({
             "ID_UC_G0": [10],
+            "centroid_lon": [20.0],
             "centroid_lat": [12.0],
+            "city_area_km2": [120.0],
+            "country": ["New Country"],
+            "GC_DEV_USR": ["New Region"],
             "koppen_geiger_code": pd.array([1], dtype="Int64"),
             "koppen_geiger_class": ["Af"],
             "koppen_geiger_macro_group": ["Tropical"]
@@ -207,7 +256,11 @@ class CityMetadataTests(unittest.TestCase):
 
         merged = merge_city_metadata(panel, metadata, CZ_MACRO_GROUPS)
 
+        self.assertEqual(merged["centroid_lon"].tolist(), [20.0])
         self.assertEqual(merged["centroid_lat"].tolist(), [12.0])
+        self.assertEqual(merged["city_area_km2"].tolist(), [120.0])
+        self.assertEqual(merged["country"].tolist(), ["New Country"])
+        self.assertEqual(merged["GC_DEV_USR"].tolist(), ["New Region"])
         self.assertEqual(merged["koppen_geiger_code"].tolist(), [1])
         self.assertEqual(merged["koppen_geiger_class"].tolist(), ["Af"])
         self.assertEqual(
@@ -219,7 +272,11 @@ class CityMetadataTests(unittest.TestCase):
         panel = pd.DataFrame({"ID_UC_G0": [99], "year": [2000]})
         metadata = pd.DataFrame({
             "ID_UC_G0": [10],
+            "centroid_lon": [12.0],
             "centroid_lat": [12.0],
+            "city_area_km2": [100.0],
+            "country": ["Country A"],
+            "GC_DEV_USR": ["Region A"],
             "koppen_geiger_code": pd.array([1], dtype="Int64"),
             "koppen_geiger_class": ["Af"],
             "koppen_geiger_macro_group": ["Tropical"]

@@ -19,6 +19,11 @@ def main() -> None:
     )
     print(
         f"[OUTPUT] {config.city_metadata_file}: {len(metadata):,} cities; "
+        f"{metadata['centroid_lon'].notna().sum():,} centroids with longitude; "
+        f"{metadata['centroid_lat'].notna().sum():,} centroids with latitude; "
+        f"{metadata['city_area_km2'].notna().sum():,} cities with area; "
+        f"{metadata['country'].notna().sum():,} cities with country; "
+        f"{metadata['GC_DEV_USR'].notna().sum():,} cities with GHSL region; "
         f"{classified_count:,} cities assigned a climate class and macro "
         "group; "
         f"{no_data_count:,} raster no-data centroids; "

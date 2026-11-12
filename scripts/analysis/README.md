@@ -58,6 +58,28 @@ rows = con.execute(
 ).fetchall()
 ```
 
+## City metadata
+
+Build the metadata table from the configured GHSL urban-boundary shapefile and
+Köppen-Geiger raster with:
+
+```bash
+python scripts/analysis/build_city_metadata.py
+```
+
+In addition to `ID_UC_G0` and Köppen fields, the output contains `centroid_lon`
+and `centroid_lat` in EPSG:4326, `city_area_km2` from GHSL's `GC_UCA_KM2`,
+`country` from `GC_CNT_GAD`, and the original `GC_DEV_USR` region value. The
+area is the GHSL urban-centre area in km²; country and region values are
+carried from the source attributes.
+
+To refresh the metadata join in the existing monthly, seasonal, and annual
+SUHI Parquets after rebuilding the metadata table, run:
+
+```bash
+python scripts/analysis/04_merge_city_metadata.py
+```
+
 ## City-month Gold trend dataset
 
 The Gold builder streams the Silver pixel LST, development, and rural Parquets

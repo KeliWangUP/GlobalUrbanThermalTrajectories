@@ -8,7 +8,13 @@ import rasterio
 
 
 CITY_ID_COLUMN = "ID_UC_G0"
+CENTROID_LON_COLUMN = "centroid_lon"
 CENTROID_LAT_COLUMN = "centroid_lat"
+CITY_AREA_KM2_COLUMN = "city_area_km2"
+COUNTRY_COLUMN = "country"
+REGION_COLUMN = "GC_DEV_USR"
+GHSL_AREA_COLUMN = "GC_UCA_KM2"
+GHSL_COUNTRY_COLUMN = "GC_CNT_GAD"
 KOPPEN_CODE_COLUMN = "koppen_geiger_code"
 KOPPEN_CLASS_COLUMN = "koppen_geiger_class"
 KOPPEN_MACRO_GROUP_COLUMN = "koppen_geiger_macro_group"
@@ -145,6 +151,17 @@ def build_city_metadata(
             f"City boundary file is missing ID column '{id_column}': "
             f"{shapefile_path}"
         )
+    required_source_columns = {
+        GHSL_AREA_COLUMN,
+        GHSL_COUNTRY_COLUMN,
+        REGION_COLUMN
+    }
+    missing_source_columns = required_source_columns - set(cities.columns)
+    if missing_source_columns:
+        raise ValueError(
+            "City boundary file is missing required GHSL attributes: "
+            f"{sorted(missing_source_columns)}: {shapefile_path}"
+        )
     if cities.crs is None:
         raise ValueError(
             f"City boundary file has no declared CRS: {shapefile_path}"
@@ -159,6 +176,29 @@ def build_city_metadata(
         raise ValueError(
             f"City IDs in {shapefile_path} must be unique; "
             f"examples: {examples}"
+        )
+
+    area_km2 = pd.to_numeric(cities[GHSL_AREA_COLUMN], errors="raise")
+    if (
+        area_km2.isna().any()
+        or not np.isfinite(area_km2.to_numpy(dtype="float64")).all()
+        or (area_km2 <= 0).any()
+    ):
+        raise ValueError(
+            f"GHSL {GHSL_AREA_COLUMN} must contain finite positive km² "
+            f"values: {shapefile_path}"
+        )
+    country = cities[GHSL_COUNTRY_COLUMN].astype("string").str.strip()
+    region = cities[REGION_COLUMN].astype("string").str.strip()
+    if country.isna().any() or country.eq("").any():
+        raise ValueError(
+            f"GHSL {GHSL_COUNTRY_COLUMN} contains missing country names: "
+            f"{shapefile_path}"
+        )
+    if region.isna().any() or region.eq("").any():
+        raise ValueError(
+            f"GHSL {REGION_COLUMN} contains missing region names: "
+            f"{shapefile_path}"
         )
 
     geometries = cities.geometry.copy()
@@ -195,20 +235,35 @@ def build_city_metadata(
     ]
     metadata = pd.DataFrame({
         CITY_ID_COLUMN: cities[id_column].to_numpy(),
+        CENTROID_LON_COLUMN: geographic_centroids.x.to_numpy(),
         CENTROID_LAT_COLUMN: geographic_centroids.y.to_numpy(),
+        CITY_AREA_KM2_COLUMN: area_km2.to_numpy(dtype="float64"),
+        COUNTRY_COLUMN: country.to_numpy(),
+        REGION_COLUMN: region.to_numpy(),
         KOPPEN_CODE_COLUMN: climate_codes,
         KOPPEN_CLASS_COLUMN: climate_classes,
         KOPPEN_MACRO_GROUP_COLUMN: climate_macro_groups
     })
 
-    if metadata[CENTROID_LAT_COLUMN].isna().any():
+    if (
+        metadata[CENTROID_LON_COLUMN].isna().any()
+        or not np.isfinite(
+            metadata[CENTROID_LON_COLUMN].to_numpy(dtype="float64")
+        ).all()
+        or not metadata[CENTROID_LON_COLUMN].between(-180, 180).all()
+    ):
         raise ValueError(
-            f"Centroid latitude calculation produced null values for "
-            f"{shapefile_path}."
+            f"Centroid longitude is invalid for {shapefile_path}."
         )
-    if not metadata[CENTROID_LAT_COLUMN].between(-90, 90).all():
+    if (
+        metadata[CENTROID_LAT_COLUMN].isna().any()
+        or not np.isfinite(
+            metadata[CENTROID_LAT_COLUMN].to_numpy(dtype="float64")
+        ).all()
+        or not metadata[CENTROID_LAT_COLUMN].between(-90, 90).all()
+    ):
         raise ValueError(
-            f"Centroid latitude is outside [-90, 90] for {shapefile_path}."
+            f"Centroid latitude is invalid for {shapefile_path}."
         )
     return metadata, invalid_geometry_count
 
@@ -221,7 +276,11 @@ def merge_city_metadata(
     """Attach authoritative centroid and climate attributes to panel rows."""
     required_metadata = {
         CITY_ID_COLUMN,
+        CENTROID_LON_COLUMN,
         CENTROID_LAT_COLUMN,
+        CITY_AREA_KM2_COLUMN,
+        COUNTRY_COLUMN,
+        REGION_COLUMN,
         KOPPEN_CODE_COLUMN,
         KOPPEN_CLASS_COLUMN,
         KOPPEN_MACRO_GROUP_COLUMN
@@ -237,6 +296,36 @@ def merge_city_metadata(
         raise ValueError("City metadata contains null city IDs.")
     if metadata[CITY_ID_COLUMN].duplicated().any():
         raise ValueError("City metadata contains duplicate city IDs.")
+    for column, lower, upper in (
+        (CENTROID_LON_COLUMN, -180, 180),
+        (CENTROID_LAT_COLUMN, -90, 90)
+    ):
+        values = pd.to_numeric(metadata[column], errors="raise")
+        if (
+            values.isna().any()
+            or not np.isfinite(values.to_numpy(dtype="float64")).all()
+            or not values.between(lower, upper).all()
+        ):
+            raise ValueError(
+                f"City metadata {column} must be finite and in "
+                f"[{lower}, {upper}]."
+            )
+    area_km2 = pd.to_numeric(metadata[CITY_AREA_KM2_COLUMN], errors="raise")
+    if (
+        area_km2.isna().any()
+        or not np.isfinite(area_km2.to_numpy(dtype="float64")).all()
+        or (area_km2 <= 0).any()
+    ):
+        raise ValueError(
+            f"City metadata {CITY_AREA_KM2_COLUMN} must contain finite "
+            "positive values."
+        )
+    for column in (COUNTRY_COLUMN, REGION_COLUMN):
+        labels = metadata[column].astype("string").str.strip()
+        if labels.isna().any() or labels.eq("").any():
+            raise ValueError(
+                f"City metadata {column} contains missing values."
+            )
 
     codes = pd.to_numeric(metadata[KOPPEN_CODE_COLUMN], errors="raise")
     invalid_codes = codes.notna() & ~codes.isin(CLIMATE_CLASS_BY_CODE)
