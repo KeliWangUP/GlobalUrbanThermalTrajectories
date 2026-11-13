@@ -1,0 +1,7 @@
+{
+  "paths": {
+    "pixel_classification": "../../data/processed/gold/city_month_trends_stable_development_2000_isa_0p7/city_pixel_classification.parquet",
+    "gold_manifest": "../../data/processed/gold/city_month_trends_stable_development_2000_isa_0p7/manifest.json",
+    "output_csv": "../../data/processed/result/city_pixel_zone_counts_2000_isa_0p7.csv"
+  }
+}

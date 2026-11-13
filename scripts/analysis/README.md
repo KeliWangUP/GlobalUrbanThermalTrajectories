@@ -137,6 +137,18 @@ water-eligible mask is applied before the urban-zone monthly aggregates are
 computed. Stable, development, and overall zone outputs are built in this
 same Gold run; there is no separate zone-generation command.
 
+To inspect per-city pixel counts for the stable and development classes, run:
+
+```bash
+python scripts/analysis/diagnose_city_pixel_zone_counts.py
+```
+
+[`city_pixel_zone_counts_config.json`](./city_pixel_zone_counts_config.json)
+selects the Gold pixel-classification table, matching manifest, and CSV output.
+The CSV reports total and water-eligible pixel counts separately for each
+class, plus the total eligible count and water-excluded counts. This check
+reads the existing Gold classification and does not rebuild Silver or Gold.
+
 ### Seasonal trends and γ by urban pixel zone
 
 After building the Gold dataset, calculate seasonal means and trends for the

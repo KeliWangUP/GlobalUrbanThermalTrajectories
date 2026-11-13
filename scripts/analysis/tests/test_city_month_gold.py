@@ -11,6 +11,7 @@ MODULE_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(MODULE_DIR))
 
 from build_city_month_gold import build_gold, literal
+from diagnose_city_pixel_zone_counts import build_city_pixel_zone_counts
 
 
 CONFIG_TEMPLATE = MODULE_DIR / "city_month_gold_config.json"
@@ -227,6 +228,34 @@ class CityMonthGoldTests(unittest.TestCase):
                 gold_manifest["urban_classification"]["stable_isa_threshold"],
                 0.7,
             )
+            count_csv = root / "city_pixel_zone_counts.csv"
+            count_config = root / "count_config.json"
+            count_config.write_text(
+                json.dumps(
+                    {
+                        "paths": {
+                            "pixel_classification": str(
+                                output_dir / "city_pixel_classification.parquet"
+                            ),
+                            "gold_manifest": str(output_dir / "manifest.json"),
+                            "output_csv": str(count_csv),
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            build_city_pixel_zone_counts(count_config)
+            count_row = result.execute(
+                """
+                SELECT stable_pixel_count, development_pixel_count,
+                       stable_water_eligible_pixel_count,
+                       development_water_eligible_pixel_count
+                FROM read_csv_auto(?)
+                WHERE ID_UC_G0 = 10
+                """,
+                [str(count_csv)],
+            ).fetchone()
+            self.assertEqual(count_row, (2, 2, 2, 2))
             result.close()
 
     def test_refuses_to_overwrite_an_existing_gold_directory(self):
