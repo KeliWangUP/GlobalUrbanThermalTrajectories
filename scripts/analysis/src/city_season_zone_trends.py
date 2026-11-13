@@ -20,6 +20,7 @@ REQUIRED_COLUMNS = {
     "centroid_lat",
     "koppen_geiger_class",
     "climate_major",
+    "GC_DEV_USR",
     "urban_zone",
     "year",
     "month",
@@ -259,6 +260,7 @@ def _validate_source(
             HAVING COUNT(DISTINCT centroid_lat) > 1
                 OR COUNT(DISTINCT koppen_geiger_class) > 1
                 OR COUNT(DISTINCT climate_major) > 1
+                OR COUNT(DISTINCT GC_DEV_USR) > 1
         )
         """,
         [source.as_posix()],
@@ -283,6 +285,7 @@ def _season_means_query(source: Path, start: int, end: int, min_months: int) -> 
                 CAST(centroid_lat AS DOUBLE) AS centroid_lat,
                 CAST(koppen_geiger_class AS VARCHAR) AS climate,
                 CAST(climate_major AS VARCHAR) AS climate_major,
+                CAST(GC_DEV_USR AS VARCHAR) AS GC_DEV_USR,
                 CAST(urban_zone AS VARCHAR) AS urban_zone,
                 CAST(slot AS VARCHAR) AS slot,
                 CAST(year AS INTEGER)
@@ -307,6 +310,7 @@ def _season_means_query(source: Path, start: int, end: int, min_months: int) -> 
                 centroid_lat,
                 climate,
                 climate_major,
+                GC_DEV_USR,
                 urban_zone,
                 slot,
                 season_year,
@@ -318,7 +322,7 @@ def _season_means_query(source: Path, start: int, end: int, min_months: int) -> 
             FROM monthly
             WHERE season_year BETWEEN {start} AND {end}
             GROUP BY
-                ID_UC_G0, centroid_lat, climate, climate_major,
+                ID_UC_G0, centroid_lat, climate, climate_major, GC_DEV_USR,
                 urban_zone, slot, season_year, season
         )
         SELECT *,
@@ -349,6 +353,7 @@ def _season_trends_query(
                 ID_UC_G0,
                 climate,
                 climate_major,
+                GC_DEV_USR,
                 centroid_lat,
                 urban_zone,
                 season,
@@ -378,7 +383,7 @@ def _season_trends_query(
             WHERE season_qc_pass
               AND season_year BETWEEN {start} AND {end}
             GROUP BY
-                ID_UC_G0, climate, climate_major, centroid_lat,
+                ID_UC_G0, climate, climate_major, GC_DEV_USR, centroid_lat,
                 urban_zone, season, slot
         ),
         trends AS (
@@ -394,6 +399,7 @@ def _season_trends_query(
             ID_UC_G0,
             climate,
             climate_major,
+            GC_DEV_USR,
             centroid_lat,
             CASE
                 WHEN centroid_lat > 0 THEN 'north'
@@ -451,6 +457,7 @@ def _gamma_query(source: Path) -> str:
                 summer.ID_UC_G0,
                 summer.climate,
                 summer.climate_major,
+                summer.GC_DEV_USR,
                 summer.centroid_lat,
                 summer.hemisphere,
                 summer.urban_zone,
@@ -483,6 +490,7 @@ def _gamma_query(source: Path) -> str:
             ID_UC_G0,
             climate,
             climate_major,
+            GC_DEV_USR,
             centroid_lat,
             hemisphere,
             urban_zone,

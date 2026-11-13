@@ -40,7 +40,8 @@
       "centroid_lat": "centroid_lat",
       "koppen_code": "koppen_geiger_code",
       "koppen_class": "koppen_geiger_class",
-      "macro_group": "koppen_geiger_macro_group"
+      "macro_group": "koppen_geiger_macro_group",
+      "ghsl_region": "GC_DEV_USR"
     }
   },
   "slots": {

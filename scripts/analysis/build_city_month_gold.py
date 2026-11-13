@@ -858,7 +858,9 @@ def create_climate_info(
                CAST({ident(columns['koppen_class'])} AS VARCHAR)
                    AS koppen_geiger_class,
                CAST({ident(columns['macro_group'])} AS VARCHAR)
-                   AS koppen_geiger_macro_group
+                   AS koppen_geiger_macro_group,
+               CAST({ident(columns['ghsl_region'])} AS VARCHAR)
+                   AS GC_DEV_USR
         FROM {source}
         WHERE CAST({ident(columns['city'])} AS BIGINT)
               IN (SELECT unnest(?))
@@ -1155,6 +1157,7 @@ def build_gold(config_path: Path) -> Path:
                      c.koppen_geiger_code,
                      c.koppen_geiger_class,
                      c.koppen_geiger_macro_group,
+                     c.GC_DEV_USR,
                      LEFT(c.koppen_geiger_class, 1) AS climate_major,
                      z.urban_zone,
                      z.year, z.month, z.slot,

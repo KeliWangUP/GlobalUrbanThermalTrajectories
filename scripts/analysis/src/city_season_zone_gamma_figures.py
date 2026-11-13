@@ -35,6 +35,7 @@ GAMMA_METRICS = (
 REQUIRED_COLUMNS = {
     "ID_UC_G0",
     "climate",
+    "GC_DEV_USR",
     "hemisphere",
     "urban_zone",
     "slot",
@@ -49,7 +50,7 @@ REQUIRED_COLUMNS = {
 def _validate_zone_gammas(
     frame: pd.DataFrame,
     tolerance: float,
-) -> float:
+) -> tuple[float, int]:
     missing = REQUIRED_COLUMNS - set(frame.columns)
     if missing:
         raise ValueError(
@@ -63,6 +64,12 @@ def _validate_zone_gammas(
         )
     if frame["ID_UC_G0"].isna().any():
         raise ValueError("Seasonal zone gamma table contains null city IDs.")
+    regions = frame["GC_DEV_USR"].astype("string").str.strip()
+    region_missing = regions.isna() | regions.eq("").fillna(False)
+    missing_region_count = int(region_missing.sum())
+    frame["GC_DEV_USR"] = (
+        regions.mask(region_missing, "Missing GHSL region").astype(str)
+    )
     if set(frame["urban_zone"].dropna().unique()) != set(URBAN_ZONES):
         raise ValueError(
             "Seasonal zone gamma table must contain stable, development, "
@@ -109,7 +116,7 @@ def _validate_zone_gammas(
             f"max |gamma_suhi - (gamma_urban - gamma_rural)|="
             f"{max_error:.12g}, tolerance={tolerance:.12g}."
         )
-    return max_error
+    return max_error, missing_region_count
 
 
 def summarize_zone_gammas(
@@ -228,9 +235,18 @@ def _plot_zone_synchrony(
     subclasses: list[str],
     major_climate_group: str,
     hemisphere: str,
+    color_by: str,
 ):
+    category_column = (
+        "GC_DEV_USR" if color_by == "ghsl_region" else "climate"
+    )
+    category_label = (
+        "GHSL region" if color_by == "ghsl_region" else "Köppen subclass"
+    )
+    category_values = frame[category_column].astype("string").str.strip()
+    categories = sorted(category_values.unique().tolist())
     category_colors = dict(
-        zip(subclasses, plt.get_cmap("tab20")(np.linspace(0, 1, len(subclasses))))
+        zip(categories, plt.get_cmap("tab20")(np.linspace(0, 1, len(categories))))
     )
     max_abs_value = max(
         float(frame["gamma_rural"].abs().max()),
@@ -250,14 +266,17 @@ def _plot_zone_synchrony(
         for column_index, (slot, slot_label, _, _) in enumerate(SLOTS):
             axis = axes[row_index, column_index]
             slot_frame = zone_frame.loc[zone_frame["slot"].eq(slot)]
-            for climate in subclasses:
-                category_rows = slot_frame.loc[slot_frame["climate"].eq(climate)]
+            slot_categories = category_values.loc[slot_frame.index]
+            for category in categories:
+                category_rows = slot_frame.loc[
+                    slot_categories.eq(category).to_numpy()
+                ]
                 if category_rows.empty:
                     continue
                 axis.scatter(
                     category_rows["gamma_rural"],
                     category_rows["gamma_urban"],
-                    color=category_colors[climate],
+                    color=category_colors[category],
                     s=14,
                     alpha=0.65,
                     linewidths=0,
@@ -286,11 +305,11 @@ def _plot_zone_synchrony(
             marker="o",
             linestyle="",
             markersize=6,
-            markerfacecolor=category_colors[climate],
+            markerfacecolor=category_colors[category],
             markeredgecolor="none",
-            label=climate,
+            label=category,
         )
-        for climate in subclasses
+        for category in categories
     ]
     handles.append(
         Line2D(
@@ -305,7 +324,7 @@ def _plot_zone_synchrony(
     figure.suptitle(
         "City-level seasonal trend synchrony by urban pixel zone\n"
         f"Major climate {major_climate_group}; hemisphere: {hemisphere}; "
-        "colored by Köppen subclass",
+        f"colored by {category_label}",
         y=0.995,
         fontsize=14,
     )
@@ -323,6 +342,15 @@ def _plot_zone_synchrony(
 def build_city_season_zone_gamma_figures(config_path: Path) -> Path:
     config_path = config_path.resolve()
     config = _load_config(config_path)
+    color_by = config.get("synchrony_color_by", "ghsl_region")
+    if not isinstance(color_by, str) or color_by not in {
+        "ghsl_region",
+        "subclimate",
+    }:
+        raise ValueError(
+            "Config 'synchrony_color_by' must be 'ghsl_region' or 'subclimate'."
+        )
+    config["synchrony_color_by"] = color_by
     source = Path(config["paths"]["gamma_file"])
     if not source.is_file():
         raise FileNotFoundError(f"City seasonal zone gamma table not found: {source}")
@@ -339,7 +367,7 @@ def build_city_season_zone_gamma_figures(config_path: Path) -> Path:
         frame = connection.execute(
             "SELECT * FROM read_parquet(?)", [source.as_posix()]
         ).df()
-        max_decomposition_error = _validate_zone_gammas(
+        max_decomposition_error, missing_region_count = _validate_zone_gammas(
             frame, config["decomposition_tolerance"]
         )
         frame, hemisphere_filter = _filter_trends_by_hemisphere(
@@ -377,6 +405,7 @@ def build_city_season_zone_gamma_figures(config_path: Path) -> Path:
             subclasses,
             config["major_climate_group"],
             config["hemisphere"],
+            config["synchrony_color_by"],
         )
         synchrony_path = staging / "figure_2_zone_city_synchrony.png"
         synchrony_figure.savefig(
@@ -396,6 +425,12 @@ def build_city_season_zone_gamma_figures(config_path: Path) -> Path:
             "hemisphere_filter": hemisphere_filter,
             "climate_group_counts": climate_counts,
             "urban_zones": list(URBAN_ZONES),
+            "synchrony_color_by": (
+                "GC_DEV_USR"
+                if config["synchrony_color_by"] == "ghsl_region"
+                else "climate"
+            ),
+            "missing_ghsl_region_rows": missing_region_count,
             "decomposition_tolerance": config["decomposition_tolerance"],
             "summer_minus_winter_direction": {
                 "north": "JJA - DJF",

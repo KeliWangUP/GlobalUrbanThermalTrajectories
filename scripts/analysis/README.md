@@ -163,8 +163,10 @@ python scripts/analysis/plot_city_season_zone_gamma.py
 
 [`city_season_zone_gamma_figures_config.json`](./city_season_zone_gamma_figures_config.json)
 controls the Köppen major group, optional subclasses, hemisphere (`all`,
-`north`, or `south`), and output directory. The figures compare zone-level
-γSUHI distributions and plot γR versus γU with y=x as the synchrony reference.
+`north`, or `south`), and output directory. `synchrony_color_by` controls the
+scatter colors; it defaults to `ghsl_region` (`GC_DEV_USR`) and can be set to
+`subclimate`. The figures compare zone-level γSUHI distributions and plot γR
+versus γU with y=x as the synchrony reference.
 
 ### Gold completeness and trend diagnostics
 

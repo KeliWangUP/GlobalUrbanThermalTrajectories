@@ -6,6 +6,7 @@
   "major_climate_group": "C",
   "subclimate_classes": [],
   "hemisphere": "all",
+  "synchrony_color_by": "ghsl_region",
   "dpi": 240,
   "decomposition_tolerance": 1e-8
 }

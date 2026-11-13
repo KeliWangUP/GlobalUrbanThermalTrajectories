@@ -111,11 +111,11 @@ class CityMonthGoldTests(unittest.TestCase):
                 connection,
                 """
                 SELECT * FROM (VALUES
-                    (10::INTEGER, 30.0::DOUBLE, 1::INTEGER, 'Af', 'Tropical'),
-                    (20::INTEGER, -30.0::DOUBLE, 4::INTEGER, 'BWh', 'Arid')
+                    (10::INTEGER, 30.0::DOUBLE, 1::INTEGER, 'Af', 'Tropical', 'Region A'),
+                    (20::INTEGER, -30.0::DOUBLE, 4::INTEGER, 'BWh', 'Arid', 'Region B')
                 ) AS metadata(
                     ID_UC_G0, centroid_lat, koppen_geiger_code,
-                    koppen_geiger_class, koppen_geiger_macro_group
+                    koppen_geiger_class, koppen_geiger_macro_group, GC_DEV_USR
                 )
                 """,
                 metadata,
@@ -182,6 +182,14 @@ class CityMonthGoldTests(unittest.TestCase):
                 ).fetchall()
             }
             self.assertEqual(zone_labels, {"stable", "development", "overall"})
+            ghsl_regions = {
+                row[0]
+                for row in result.execute(
+                    "SELECT DISTINCT GC_DEV_USR FROM read_parquet(?)",
+                    [str(zone_path)],
+                ).fetchall()
+            }
+            self.assertEqual(ghsl_regions, {"Region A", "Region B"})
             classified_counts = result.execute(
                 """
                 SELECT urban_zone, COUNT(*)

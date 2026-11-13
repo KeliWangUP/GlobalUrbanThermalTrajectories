@@ -67,6 +67,7 @@ def _write_source(path: Path) -> None:
                                 latitude,
                                 climate,
                                 "C",
+                                "Region A" if city_id == 1 else "Region B",
                                 urban_zone,
                                 year,
                                 month,
@@ -91,21 +92,22 @@ def _write_source(path: Path) -> None:
                         "'" + row[2] + "'",
                         "'" + row[3] + "'",
                         "'" + row[4] + "'",
-                        str(row[5]),
+                        "'" + row[5] + "'",
                         str(row[6]),
-                        "'" + row[7] + "'",
+                        str(row[7]),
+                        "'" + row[8] + "'",
                         "TRUE",
-                        repr(row[9]),
                         repr(row[10]),
                         repr(row[11]),
+                        repr(row[12]),
                     )
                 ) + ")"
                 for row in rows
             )
         + """) AS source(
             ID_UC_G0, centroid_lat, koppen_geiger_class, climate_major,
-            urban_zone, year, month, slot, paired_valid, urban_lst, rural_lst,
-            suhi
+            GC_DEV_USR, urban_zone, year, month, slot, paired_valid, urban_lst,
+            rural_lst, suhi
         )
         """
     )
@@ -184,6 +186,13 @@ class CitySeasonZoneTrendTests(unittest.TestCase):
             gamma_count = connection.execute(
                 "SELECT COUNT(*) FROM read_parquet(?)", [gamma_path.as_posix()]
             ).fetchone()[0]
+            region_names = {
+                row[0]
+                for row in connection.execute(
+                    "SELECT DISTINCT GC_DEV_USR FROM read_parquet(?)",
+                    [gamma_path.as_posix()],
+                ).fetchall()
+            }
             north = connection.execute(
                 """
                 SELECT summer_season, winter_season, gamma_urban,
@@ -208,6 +217,7 @@ class CitySeasonZoneTrendTests(unittest.TestCase):
 
             self.assertEqual(trend_count, 2 * len(ZONES) * 4 * len(SLOTS))
             self.assertEqual(gamma_count, 2 * len(ZONES) * len(SLOTS))
+            self.assertEqual(region_names, {"Region A", "Region B"})
             self.assertEqual(north[:2], ("JJA", "DJF"))
             self.assertAlmostEqual(north[2], 1.5)
             self.assertAlmostEqual(north[3], -0.5)
@@ -230,6 +240,7 @@ class CitySeasonZoneTrendTests(unittest.TestCase):
                         "major_climate_group": "C",
                         "subclimate_classes": ["Cfa"],
                         "hemisphere": "all",
+                        "synchrony_color_by": "ghsl_region",
                         "dpi": 72,
                         "decomposition_tolerance": 1e-8,
                     }
@@ -245,6 +256,12 @@ class CitySeasonZoneTrendTests(unittest.TestCase):
             )
             self.assertTrue(
                 (figure_dir / "figure_2_zone_city_synchrony.png").is_file()
+            )
+            figure_manifest = json.loads(
+                (figure_dir / "manifest.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                figure_manifest["synchrony_color_by"], "GC_DEV_USR"
             )
             connection = duckdb.connect(":memory:")
             summary_rows = connection.execute(
