@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import shutil
 import tempfile
 from datetime import datetime, timezone
@@ -52,6 +53,35 @@ def _sha256(path: Path) -> str:
         for block in iter(lambda: file.read(4 * 1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def _set_group_shared_permissions(path: Path, group_id: int, is_directory: bool) -> None:
+    if os.name != "posix":
+        return
+    if path.stat().st_gid != group_id:
+        os.chown(path, -1, group_id)
+    path.chmod(0o2775 if is_directory else 0o664)
+
+
+def _publish_staged_outputs(staging: Path, output_dir: Path) -> None:
+    if output_dir.is_symlink():
+        raise ValueError(f"Figure output directory must not be a symlink: {output_dir}")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    if not output_dir.is_dir():
+        raise NotADirectoryError(f"Figure output path is not a directory: {output_dir}")
+
+    staged_files = list(staging.iterdir())
+    if any(path.is_dir() for path in staged_files):
+        raise IsADirectoryError(f"Unexpected directory in staging output: {staging}")
+
+    if os.name == "posix":
+        group_id = output_dir.stat().st_gid
+        _set_group_shared_permissions(output_dir, group_id, is_directory=True)
+        for path in staged_files:
+            _set_group_shared_permissions(path, group_id, is_directory=False)
+
+    for path in sorted(staged_files, key=lambda item: item.name == "manifest.json"):
+        os.replace(path, output_dir / path.name)
 
 
 def _load_config(config_path: Path) -> dict[str, Any]:
@@ -447,11 +477,6 @@ def build_city_seasonal_gamma_subclimate_figures(
     if not source.is_file():
         raise FileNotFoundError(f"City seasonal gamma table not found: {source}")
     output_dir = Path(config["paths"]["output_dir"])
-    if output_dir.exists():
-        raise FileExistsError(
-            f"Figure output directory already exists; refusing to overwrite: "
-            f"{output_dir}"
-        )
     output_dir.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(
         tempfile.mkdtemp(
@@ -459,7 +484,6 @@ def build_city_seasonal_gamma_subclimate_figures(
             dir=output_dir.parent,
         )
     )
-    published = False
     connection = duckdb.connect(":memory:")
     try:
         frame = connection.execute(
@@ -607,12 +631,7 @@ def build_city_seasonal_gamma_subclimate_figures(
             json.dumps(manifest, ensure_ascii=True, indent=2) + "\n",
             encoding="utf-8",
         )
-        if output_dir.exists():
-            raise FileExistsError(
-                f"Figure output directory appeared during build: {output_dir}"
-            )
-        staging.rename(output_dir)
-        published = True
+        _publish_staged_outputs(staging, output_dir)
         print(
             f"[DONE] Subclimate gamma figures and summary published at "
             f"{output_dir}",
@@ -621,5 +640,5 @@ def build_city_seasonal_gamma_subclimate_figures(
         return output_dir
     finally:
         connection.close()
-        if not published and staging.exists():
+        if staging.exists():
             shutil.rmtree(staging)

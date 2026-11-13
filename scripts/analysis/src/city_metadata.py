@@ -18,6 +18,11 @@ GHSL_COUNTRY_COLUMN = "GC_CNT_GAD"
 KOPPEN_CODE_COLUMN = "koppen_geiger_code"
 KOPPEN_CLASS_COLUMN = "koppen_geiger_class"
 KOPPEN_MACRO_GROUP_COLUMN = "koppen_geiger_macro_group"
+BUILT_DEVELOPMENT_YEARS = (2000, 2005, 2010, 2015, 2020)
+BUILT_SURFACE_2000_COLUMN = "built_surface_2000_m2"
+BUILT_SURFACE_SLOPE_COLUMN = "built_surface_slope_m2_per_year"
+BUILT_VOLUME_2000_COLUMN = "built_volume_total_2000_m3"
+BUILT_VOLUME_SLOPE_COLUMN = "built_volume_total_slope_m3_per_year"
 CLIMATE_CLASS_BY_CODE = {
     1: "Af",
     2: "Am",
@@ -133,11 +138,110 @@ def _macro_group_by_code(
     return code_to_group
 
 
+def _read_built_development_metrics(path: Path) -> pd.DataFrame:
+    if not path.is_file():
+        raise FileNotFoundError(f"GHSL built-development CSV not found: {path}")
+
+    input_columns = [
+        CITY_ID_COLUMN,
+        *(
+            f"built_surface_sum_{year}_m2"
+            for year in BUILT_DEVELOPMENT_YEARS
+        ),
+        *(
+            f"built_volume_total_sum_{year}_m3"
+            for year in BUILT_DEVELOPMENT_YEARS
+        )
+    ]
+    source_columns = pd.read_csv(path, nrows=0).columns
+    missing_columns = set(input_columns) - set(source_columns)
+    if missing_columns:
+        raise ValueError(
+            "GHSL built-development CSV is missing required columns: "
+            f"{sorted(missing_columns)}: {path}"
+        )
+
+    source = pd.read_csv(path, usecols=input_columns)
+    if source[CITY_ID_COLUMN].isna().any():
+        raise ValueError(f"GHSL built-development CSV has null city IDs: {path}")
+    if source[CITY_ID_COLUMN].duplicated().any():
+        raise ValueError(
+            f"GHSL built-development CSV has duplicate city IDs: {path}"
+        )
+
+    metric_values: dict[str, np.ndarray] = {}
+    for metric, unit in (
+        ("built_surface_sum", "m2"),
+        ("built_volume_total_sum", "m3")
+    ):
+        columns = [
+            f"{metric}_{year}_{unit}"
+            for year in BUILT_DEVELOPMENT_YEARS
+        ]
+        values = source[columns].apply(pd.to_numeric, errors="raise")
+        matrix = values.to_numpy(dtype="float64")
+        if (
+            not np.isfinite(matrix).all()
+            or (matrix < 0).any()
+        ):
+            raise ValueError(
+                f"GHSL built-development values must be finite and "
+                f"non-negative in {columns}: {path}"
+            )
+        metric_values[metric] = matrix
+
+    centered_years = np.asarray(
+        BUILT_DEVELOPMENT_YEARS, dtype="float64"
+    )
+    centered_years -= centered_years.mean()
+    denominator = float(centered_years @ centered_years)
+    surface_values = metric_values["built_surface_sum"]
+    volume_values = metric_values["built_volume_total_sum"]
+    return pd.DataFrame({
+        CITY_ID_COLUMN: source[CITY_ID_COLUMN].to_numpy(),
+        BUILT_SURFACE_2000_COLUMN: surface_values[:, 0],
+        BUILT_SURFACE_SLOPE_COLUMN: (
+            surface_values @ centered_years / denominator
+        ),
+        BUILT_VOLUME_2000_COLUMN: volume_values[:, 0],
+        BUILT_VOLUME_SLOPE_COLUMN: (
+            volume_values @ centered_years / denominator
+        )
+    })
+
+
+def _merge_built_development_metrics(
+    metadata: pd.DataFrame,
+    built_development_csv_path: Path
+) -> pd.DataFrame:
+    metrics = _read_built_development_metrics(built_development_csv_path)
+    metadata_ids = set(metadata[CITY_ID_COLUMN])
+    metrics_ids = set(metrics[CITY_ID_COLUMN])
+    missing = metadata_ids - metrics_ids
+    extra = metrics_ids - metadata_ids
+    if missing or extra:
+        raise ValueError(
+            "GHSL built-development city IDs do not match city-boundary "
+            f"IDs; missing metrics for {len(missing)} cities "
+            f"(examples: {sorted(missing)[:10]}), and "
+            f"{len(extra)} extra metric IDs (examples: "
+            f"{sorted(extra)[:10]})."
+        )
+    return metadata.merge(
+        metrics,
+        on=CITY_ID_COLUMN,
+        how="left",
+        validate="one_to_one",
+        sort=False
+    )
+
+
 def build_city_metadata(
     shapefile_path: Path,
     climate_raster_path: Path,
     cz_macro_groups: Mapping[str, tuple[int, ...]],
-    id_column: str = CITY_ID_COLUMN
+    id_column: str = CITY_ID_COLUMN,
+    built_development_csv_path: Path | None = None
 ) -> tuple[pd.DataFrame, int]:
     """Calculate projected city centroids and sample their climate classes."""
     if not shapefile_path.is_file():
@@ -264,6 +368,10 @@ def build_city_metadata(
     ):
         raise ValueError(
             f"Centroid latitude is invalid for {shapefile_path}."
+        )
+    if built_development_csv_path is not None:
+        metadata = _merge_built_development_metrics(
+            metadata, built_development_csv_path
         )
     return metadata, invalid_geometry_count
 

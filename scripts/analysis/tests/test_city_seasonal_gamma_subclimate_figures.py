@@ -1,4 +1,6 @@
 import json
+import os
+import stat
 import sys
 import tempfile
 import unittest
@@ -12,6 +14,7 @@ MODULE_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(MODULE_DIR))
 
 from src.city_seasonal_gamma_subclimate_figures import (
+    _publish_staged_outputs,
     build_city_seasonal_gamma_subclimate_figures,
     summarize_subclimate_gammas,
 )
@@ -51,6 +54,35 @@ def _gamma_trends():
 
 
 class CitySeasonalGammaSubclimateFigureTests(unittest.TestCase):
+    def test_publishing_replaces_generated_files_and_preserves_others(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output_dir = root / "figures"
+            output_dir.mkdir()
+            (output_dir / "figure.png").write_text("old", encoding="utf-8")
+            (output_dir / "unrelated.txt").write_text("keep", encoding="utf-8")
+            staging = root / "staging"
+            staging.mkdir()
+            (staging / "figure.png").write_text("new", encoding="utf-8")
+            (staging / "manifest.json").write_text("{}", encoding="utf-8")
+
+            _publish_staged_outputs(staging, output_dir)
+
+            self.assertEqual(
+                (output_dir / "figure.png").read_text(encoding="utf-8"), "new"
+            )
+            self.assertEqual(
+                (output_dir / "unrelated.txt").read_text(encoding="utf-8"), "keep"
+            )
+            if os.name == "posix":
+                self.assertEqual(
+                    stat.S_IMODE(output_dir.stat().st_mode), 0o2775
+                )
+                self.assertEqual(
+                    stat.S_IMODE((output_dir / "figure.png").stat().st_mode),
+                    0o664,
+                )
+
     def test_summarizes_subclass_slot_gamma_distributions(self):
         frame = _gamma_trends()
         summary = summarize_subclimate_gammas(frame, ["Cfa", "Cfb"])

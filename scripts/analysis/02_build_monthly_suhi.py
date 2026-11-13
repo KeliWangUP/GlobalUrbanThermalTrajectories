@@ -93,7 +93,8 @@ def main() -> None:
     city_metadata, repaired_geometry_count = build_city_metadata(
         config.city_bounds_shapefile,
         config.koppen_geiger_raster,
-        config.cz_macro_groups
+        config.cz_macro_groups,
+        built_development_csv_path=config.ghsl_built_development_csv
     )
     climate_class_count = int(city_metadata["koppen_geiger_code"].notna().sum())
     climate_missing_count = len(city_metadata) - climate_class_count

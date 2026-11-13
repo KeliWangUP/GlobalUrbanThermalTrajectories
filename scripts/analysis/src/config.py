@@ -45,6 +45,7 @@ class AnalysisConfig:
     annual_suhi_file: Path
     city_bounds_shapefile: Path
     koppen_geiger_raster: Path
+    ghsl_built_development_csv: Path
     city_metadata_file: Path
     eda_figure_dir: Path
     eda_log_dir: Path
@@ -276,6 +277,10 @@ def load_analysis_config(config_path: Path | None = None) -> AnalysisConfig:
         ),
         koppen_geiger_raster=_resolve_path(
             config_file, _require_string(paths, "koppen_geiger_raster")
+        ),
+        ghsl_built_development_csv=_resolve_path(
+            config_file,
+            _require_string(paths, "ghsl_built_development_csv")
         ),
         city_metadata_file=_resolve_path(
             config_file, _require_string(paths, "city_metadata_file")

@@ -73,6 +73,25 @@ Its configured basename is
 the completed CSV locally when the Earth Engine task succeeds. This export
 does not modify the source GHSL assets or the existing SUHI/metadata Parquets.
 
+## City-polygon ISA area and fraction
+
+To export annual GAIA ISA statistics for every configured city polygon, run
+from the repository root:
+
+```bash
+python scripts/gee_modul/export_city_polygon_isa.py
+```
+
+This is a distinct polygon-scale product, separate from the corrected
+1,700-city MODIS-cell ISA/GHSL export. It uses `cities.asset` and
+`cities.id_field`, and exports one row per city with the 2000–2020 annual ISA
+area (`isa_urban_area_m2_YEAR`) and fraction
+(`isa_urban_fraction_YEAR`) fields. ISA area is the sum of GAIA urban-pixel
+area within the city boundary. The fraction denominator is the full polygon
+area; masked GAIA pixels contribute zero. Source scale, area tolerance,
+years, dataset name and version are configured in `city_polygon_isa`.
+Submission details are appended to `city_polygon_isa.task_log`.
+
 ## MODIS sample-point ISA, GHSL and water attributes
 
 The sample-point composition workflow summarizes the existing MODIS grid

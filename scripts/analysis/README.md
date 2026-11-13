@@ -71,7 +71,15 @@ In addition to `ID_UC_G0` and Köppen fields, the output contains `centroid_lon`
 and `centroid_lat` in EPSG:4326, `city_area_km2` from GHSL's `GC_UCA_KM2`,
 `country` from `GC_CNT_GAD`, and the original `GC_DEV_USR` region value. The
 area is the GHSL urban-centre area in km²; country and region values are
-carried from the source attributes.
+carried from the source attributes. It also joins
+`ghsl_built_city_development_2000_2020_v0.3.csv` by `ID_UC_G0`, storing the
+2000 built-surface and built-volume sums plus their OLS slopes over the five
+years 2000, 2005, 2010, 2015, and 2020. The output contains only the 2000
+baseline and annual slopes (`m²/year` and `m³/year`), not the intermediate
+year values: `built_surface_2000_m2`, `built_surface_slope_m2_per_year`,
+`built_volume_total_2000_m3`, and
+`built_volume_total_slope_m3_per_year`. Built surface is kept distinct from
+ISA; this CSV does not contain a separate ISA field.
 
 To refresh the metadata join in the existing monthly, seasonal, and annual
 SUHI Parquets after rebuilding the metadata table, run:
@@ -289,7 +297,11 @@ medians are calculated independently. Figures 3 and 4 show city-level
 `GC_DEV_USR` region, respectively. Both retain the configured hemisphere and
 subclass selection and use y=x as the synchrony reference; vertical distance
 from the line is γSUHI. The output directory includes all four figures, a
-summary CSV, and a provenance manifest, and is never overwritten.
+summary CSV, and a provenance manifest. Re-running replaces files generated
+by this script while preserving other files in the output directory. On POSIX
+servers, generated files use group-readable/writable permissions (files `664`,
+directories `2775`); the output directory's group must be shared with the SFTP
+account.
 
 ### Seasonal trends by Köppen subclass within one major climate group
 

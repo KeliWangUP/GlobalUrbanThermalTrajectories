@@ -22,7 +22,8 @@ def main() -> None:
     metadata, repaired_geometry_count = build_city_metadata(
         config.city_bounds_shapefile,
         config.koppen_geiger_raster,
-        config.cz_macro_groups
+        config.cz_macro_groups,
+        built_development_csv_path=config.ghsl_built_development_csv
     )
     write_parquet_atomically(
         metadata,

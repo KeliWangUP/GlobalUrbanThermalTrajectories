@@ -82,12 +82,27 @@ class CityMetadataTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_dir:
             shapefile = Path(temporary_dir) / "cities.shp"
             raster = Path(temporary_dir) / "climate.tif"
+            development_csv = Path(temporary_dir) / "built_development.csv"
             boundaries.to_file(shapefile)
             self._write_climate_raster(raster)
+            pd.DataFrame({
+                "ID_UC_G0": [10, 20],
+                "built_surface_sum_2000_m2": [100, 200],
+                "built_surface_sum_2005_m2": [800, 400],
+                "built_surface_sum_2010_m2": [1000, 600],
+                "built_surface_sum_2015_m2": [300, 800],
+                "built_surface_sum_2020_m2": [700, 1000],
+                "built_volume_total_sum_2000_m3": [1000, 2000],
+                "built_volume_total_sum_2005_m3": [2000, 4000],
+                "built_volume_total_sum_2010_m3": [3000, 6000],
+                "built_volume_total_sum_2015_m3": [4000, 8000],
+                "built_volume_total_sum_2020_m3": [5000, 10000]
+            }).to_csv(development_csv, index=False)
             metadata, repaired_count = build_city_metadata(
                 shapefile,
                 raster,
-                CZ_MACRO_GROUPS
+                CZ_MACRO_GROUPS,
+                built_development_csv_path=development_csv
             )
 
         self.assertEqual(repaired_count, 0)
@@ -102,7 +117,11 @@ class CityMetadataTests(unittest.TestCase):
                 "GC_DEV_USR",
                 "koppen_geiger_code",
                 "koppen_geiger_class",
-                "koppen_geiger_macro_group"
+                "koppen_geiger_macro_group",
+                "built_surface_2000_m2",
+                "built_surface_slope_m2_per_year",
+                "built_volume_total_2000_m3",
+                "built_volume_total_slope_m3_per_year"
             ]
         )
         self.assertEqual(metadata["ID_UC_G0"].tolist(), [10, 20])
@@ -123,6 +142,18 @@ class CityMetadataTests(unittest.TestCase):
         self.assertEqual(
             metadata["koppen_geiger_macro_group"].tolist(),
             ["Tropical", "Polar"]
+        )
+        self.assertEqual(metadata["built_surface_2000_m2"].tolist(), [100, 200])
+        self.assertEqual(
+            metadata["built_surface_slope_m2_per_year"].tolist(),
+            [14.0, 40.0]
+        )
+        self.assertEqual(
+            metadata["built_volume_total_2000_m3"].tolist(), [1000, 2000]
+        )
+        self.assertEqual(
+            metadata["built_volume_total_slope_m3_per_year"].tolist(),
+            [200.0, 400.0]
         )
 
     def test_repairs_invalid_polygon_before_centroid(self) -> None:
@@ -201,7 +232,11 @@ class CityMetadataTests(unittest.TestCase):
             "GC_DEV_USR": ["Region A", "Region B"],
             "koppen_geiger_code": pd.array([1, None], dtype="Int64"),
             "koppen_geiger_class": ["Af", None],
-            "koppen_geiger_macro_group": ["Tropical", None]
+            "koppen_geiger_macro_group": ["Tropical", None],
+            "built_surface_2000_m2": [100.0, 200.0],
+            "built_surface_slope_m2_per_year": [1.0, -2.0],
+            "built_volume_total_2000_m3": [1000.0, 2000.0],
+            "built_volume_total_slope_m3_per_year": [10.0, 20.0]
         })
 
         merged = merge_city_metadata(panel, metadata, CZ_MACRO_GROUPS)
@@ -227,6 +262,13 @@ class CityMetadataTests(unittest.TestCase):
         self.assertEqual(
             merged["koppen_geiger_macro_group"].tolist(),
             ["Tropical", "Tropical", None]
+        )
+        self.assertEqual(
+            merged["built_surface_2000_m2"].tolist(), [100.0, 100.0, 200.0]
+        )
+        self.assertEqual(
+            merged["built_surface_slope_m2_per_year"].tolist(),
+            [1.0, 1.0, -2.0]
         )
         self.assertEqual(len(merged), len(panel))
 

@@ -9,6 +9,7 @@
     "annual_suhi_file": "../../data/processed/suhi_annual.parquet",
     "city_bounds_shapefile": "../../data/raw/GHSL_bounds_shp/urban_bounds_2024.shp",
     "koppen_geiger_raster": "../../data/raw/Beck_KG_V1_present_0p0083.tif",
+    "ghsl_built_development_csv": "../../data/raw/ghsl_built_city_development_2000_2020_v0.3.csv",
     "city_metadata_file": "../../data/processed/city_metadata.parquet",
     "eda_figure_dir": "../../results/figures/eda",
     "eda_log_dir": "../../logs"

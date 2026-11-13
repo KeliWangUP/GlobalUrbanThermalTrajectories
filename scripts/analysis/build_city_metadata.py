@@ -8,7 +8,8 @@ def main() -> None:
     metadata, repaired_geometry_count = build_city_metadata(
         config.city_bounds_shapefile,
         config.koppen_geiger_raster,
-        config.cz_macro_groups
+        config.cz_macro_groups,
+        built_development_csv_path=config.ghsl_built_development_csv
     )
     classified_count = int(metadata["koppen_geiger_class"].notna().sum())
     no_data_count = len(metadata) - classified_count
@@ -24,6 +25,8 @@ def main() -> None:
         f"{metadata['city_area_km2'].notna().sum():,} cities with area; "
         f"{metadata['country'].notna().sum():,} cities with country; "
         f"{metadata['GC_DEV_USR'].notna().sum():,} cities with GHSL region; "
+        f"{metadata['built_surface_slope_m2_per_year'].notna().sum():,} "
+        "cities with built-development metrics; "
         f"{classified_count:,} cities assigned a climate class and macro "
         "group; "
         f"{no_data_count:,} raster no-data centroids; "
