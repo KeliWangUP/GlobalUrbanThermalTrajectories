@@ -168,6 +168,39 @@ def _load_config(config_path: Path) -> dict[str, Any]:
             "Config 'decomposition_tolerance' must be a finite non-negative number."
         )
     config["decomposition_tolerance"] = float(tolerance)
+
+    axis_limits = config.get("building_growth_axis_limits", {})
+    if not isinstance(axis_limits, dict) or set(axis_limits) - {
+        "built_surface",
+        "built_volume",
+    }:
+        raise ValueError(
+            "'building_growth_axis_limits' must contain only "
+            "'built_surface' and/or 'built_volume'."
+        )
+    normalized_limits: dict[str, list[float] | None] = {}
+    for metric in ("built_surface", "built_volume"):
+        limits = axis_limits.get(metric)
+        if limits is None:
+            normalized_limits[metric] = None
+            continue
+        if (
+            not isinstance(limits, list)
+            or len(limits) != 2
+            or any(
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(value)
+                for value in limits
+            )
+            or limits[0] >= limits[1]
+        ):
+            raise ValueError(
+                f"'building_growth_axis_limits.{metric}' must be null or "
+                "a pair of finite increasing numbers."
+            )
+        normalized_limits[metric] = [float(limits[0]), float(limits[1])]
+    config["building_growth_axis_limits"] = normalized_limits
     return config
 
 
@@ -497,8 +530,11 @@ def _plot_building_growth_scatter(
     growth_name: str,
     major_climate_group: str,
     hemisphere: str,
+    x_limits: tuple[float, float] | None,
 ):
-    categories = sorted(frame["climate"].astype("string").str.strip().unique())
+    categories = sorted(
+        frame["GC_DEV_USR"].astype("string").str.strip().unique()
+    )
     color_map = plt.get_cmap("tab20")
     colors = color_map(np.linspace(0, 1, max(len(categories), 1)))
     category_colors = dict(zip(categories, colors))
@@ -514,7 +550,7 @@ def _plot_building_growth_scatter(
             axis = axes[row_index, column_index]
             slot_frame = frame.loc[frame["slot"].eq(slot)]
             slot_categories = (
-                slot_frame["climate"].astype("string").str.strip()
+                slot_frame["GC_DEV_USR"].astype("string").str.strip()
             )
             for category in categories:
                 category_rows = slot_frame.loc[
@@ -532,6 +568,8 @@ def _plot_building_growth_scatter(
                     label=category if row_index == 0 and column_index == 0 else "_nolegend_",
                 )
             axis.axhline(0, color="0.35", linewidth=0.7, alpha=0.7)
+            if x_limits is not None:
+                axis.set_xlim(*x_limits)
             axis.grid(alpha=0.2)
             axis.set_title(f"{slot_label} (n={len(slot_frame):,})")
             if row_index == len(GAMMA_METRICS) - 1:
@@ -554,16 +592,22 @@ def _plot_building_growth_scatter(
     ]
     figure.legend(
         handles=legend_handles,
-        title="Köppen subclass",
+        title="GHSL region",
         loc="lower center",
         ncol=min(len(legend_handles), 8),
         frameon=False,
         bbox_to_anchor=(0.5, 0.01),
     )
+    axis_note = (
+        f"; x-axis limits {x_limits[0]:g} to {x_limits[1]:g}, "
+        "outside points are clipped, not filtered"
+        if x_limits is not None
+        else ""
+    )
     figure.suptitle(
         f"City-level seasonal γ versus GHSL {growth_name} growth\n"
         f"Major climate {major_climate_group}; hemisphere: {hemisphere}; "
-        "color = Köppen subclass",
+        f"color = GHSL region{axis_note}",
         y=0.99,
         fontsize=14,
     )
@@ -690,6 +734,7 @@ def build_city_seasonal_gamma_subclimate_figures(
 
         growth_figures = []
         for (
+            growth_key,
             growth_column,
             growth_scale,
             growth_label,
@@ -697,6 +742,7 @@ def build_city_seasonal_gamma_subclimate_figures(
             output_name,
         ) in (
             (
+                "built_surface",
                 "built_surface_slope_m2_per_year",
                 1_000_000,
                 "Built-surface OLS slope (km²/year, 2000–2020)",
@@ -704,6 +750,7 @@ def build_city_seasonal_gamma_subclimate_figures(
                 "figure_5_gamma_vs_built_surface_growth.png",
             ),
             (
+                "built_volume",
                 "built_volume_total_slope_m3_per_year",
                 1_000_000,
                 "Built-volume OLS slope (million m³/year, 2000–2020)",
@@ -719,6 +766,12 @@ def build_city_seasonal_gamma_subclimate_figures(
                 growth_name,
                 config["major_climate_group"],
                 config["hemisphere"],
+                (
+                    tuple(config["building_growth_axis_limits"][growth_key])
+                    if config["building_growth_axis_limits"][growth_key]
+                    is not None
+                    else None
+                ),
             )
             growth_path = staging / output_name
             growth_figure.savefig(
@@ -769,7 +822,12 @@ def build_city_seasonal_gamma_subclimate_figures(
                     },
                 },
                 "y_metrics": [metric for metric, _, _ in GAMMA_METRICS],
-                "color_by": "climate",
+                "color_by": "GC_DEV_USR",
+                "x_axis_limits": config["building_growth_axis_limits"],
+                "axis_limit_policy": (
+                    "Points outside configured limits are clipped from view, "
+                    "not removed from the selected data."
+                ),
             },
             "summary_note": (
                 "Urban, rural, and SUHI subclass medians and IQRs are "

@@ -6,6 +6,10 @@
   "major_climate_group": "C",
   "subclimate_classes": [],
   "hemisphere": "all",
+  "building_growth_axis_limits": {
+    "built_surface": [0.0, 0.5],
+    "built_volume": null
+  },
   "dpi": 240,
   "decomposition_tolerance": 1e-8
 }

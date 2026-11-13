@@ -14,6 +14,7 @@ MODULE_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(MODULE_DIR))
 
 from src.city_seasonal_gamma_subclimate_figures import (
+    _load_config,
     _publish_staged_outputs,
     _validate_gamma_trends,
     build_city_seasonal_gamma_subclimate_figures,
@@ -114,6 +115,38 @@ class CitySeasonalGammaSubclimateFigureTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "non-finite GHSL"):
             _validate_gamma_trends(frame, 1e-8)
 
+    def test_loads_configured_surface_axis_limits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config_path = Path(directory) / "config.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "paths": {
+                            "gamma_file": "gamma.parquet",
+                            "output_dir": "figures",
+                        },
+                        "major_climate_group": "C",
+                        "subclimate_classes": [],
+                        "hemisphere": "all",
+                        "building_growth_axis_limits": {
+                            "built_surface": [0.0, 0.5],
+                            "built_volume": None,
+                        },
+                        "dpi": 72,
+                        "decomposition_tolerance": 1e-8,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            config = _load_config(config_path)
+            self.assertEqual(
+                config["building_growth_axis_limits"]["built_surface"],
+                [0.0, 0.5],
+            )
+            self.assertIsNone(
+                config["building_growth_axis_limits"]["built_volume"]
+            )
+
     def test_creates_subclimate_gamma_figures_with_hemisphere_filter(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -138,6 +171,10 @@ class CitySeasonalGammaSubclimateFigureTests(unittest.TestCase):
                         "major_climate_group": "C",
                         "subclimate_classes": [],
                         "hemisphere": "north",
+                        "building_growth_axis_limits": {
+                            "built_surface": [0.0, 0.5],
+                            "built_volume": None,
+                        },
                         "dpi": 72,
                         "decomposition_tolerance": 1e-8,
                     }
@@ -201,6 +238,13 @@ class CitySeasonalGammaSubclimateFigureTests(unittest.TestCase):
                     "built_surface"
                 ]["source_column"],
                 "built_surface_slope_m2_per_year",
+            )
+            self.assertEqual(
+                manifest["building_growth_scatter"]["color_by"], "GC_DEV_USR"
+            )
+            self.assertEqual(
+                manifest["building_growth_scatter"]["x_axis_limits"],
+                {"built_surface": [0.0, 0.5], "built_volume": None},
             )
 
 
