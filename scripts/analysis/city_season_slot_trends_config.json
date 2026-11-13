@@ -1,7 +1,7 @@
 {
   "paths": {
     "seasonal_suhi_file": "../../data/processed/suhi_seasonal.parquet",
-    "output_dir": "../../data/processed/gold/city_season_slot_trends_2003_2019"
+    "output_dir": "../../data/processed/gold/city_season_slot_trends_2003_2019_with_ghsl"
   },
   "years": {
     "start": 2003,

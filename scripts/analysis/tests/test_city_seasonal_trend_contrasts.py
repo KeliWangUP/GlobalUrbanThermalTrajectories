@@ -63,6 +63,12 @@ def _seasonal_trends():
                         "city_area_km2": 100.0 + city_id,
                         "country": "Country A" if city_id == 1 else "Country B",
                         "GC_DEV_USR": "Region A" if city_id == 1 else "Region B",
+                        "built_surface_2000_m2": city_id * 1_000_000.0,
+                        "built_surface_slope_m2_per_year": city_id * 1_000.0,
+                        "built_volume_total_2000_m3": city_id * 10_000_000.0,
+                        "built_volume_total_slope_m3_per_year": (
+                            city_id * 2_500.0
+                        ),
                         "hemisphere": hemisphere,
                         "season": season,
                         "slot": slot,
@@ -139,7 +145,11 @@ class CitySeasonalTrendContrastTests(unittest.TestCase):
             connection = duckdb.connect(":memory:")
             metadata_rows = connection.execute(
                 """
-                SELECT centroid_lon, city_area_km2, country, GC_DEV_USR
+                SELECT centroid_lon, city_area_km2, country, GC_DEV_USR,
+                       built_surface_2000_m2,
+                       built_surface_slope_m2_per_year,
+                       built_volume_total_2000_m3,
+                       built_volume_total_slope_m3_per_year
                 FROM read_parquet(?)
                 WHERE ID_UC_G0 = 1 AND slot = 'terra_day'
                 """,
@@ -148,7 +158,16 @@ class CitySeasonalTrendContrastTests(unittest.TestCase):
             connection.close()
             self.assertEqual(
                 metadata_rows,
-                (1.0, 101.0, "Country A", "Region A"),
+                (
+                    1.0,
+                    101.0,
+                    "Country A",
+                    "Region A",
+                    1_000_000.0,
+                    1_000.0,
+                    10_000_000.0,
+                    2_500.0,
+                ),
             )
 
             manifest = json.loads(

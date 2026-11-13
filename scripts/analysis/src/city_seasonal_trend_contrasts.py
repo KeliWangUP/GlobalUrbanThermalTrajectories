@@ -29,6 +29,10 @@ REQUIRED_COLUMNS = {
     "city_area_km2",
     "country",
     "GC_DEV_USR",
+    "built_surface_2000_m2",
+    "built_surface_slope_m2_per_year",
+    "built_volume_total_2000_m3",
+    "built_volume_total_slope_m3_per_year",
     "hemisphere",
     "season",
     "slot",
@@ -140,6 +144,18 @@ def _validate_source(
            OR CAST(city_area_km2 AS DOUBLE) <= 0
            OR country IS NULL OR TRIM(CAST(country AS VARCHAR)) = ''
            OR GC_DEV_USR IS NULL OR TRIM(CAST(GC_DEV_USR AS VARCHAR)) = ''
+           OR built_surface_2000_m2 IS NULL
+           OR NOT isfinite(CAST(built_surface_2000_m2 AS DOUBLE))
+           OR CAST(built_surface_2000_m2 AS DOUBLE) < 0
+           OR built_surface_slope_m2_per_year IS NULL
+           OR NOT isfinite(CAST(built_surface_slope_m2_per_year AS DOUBLE))
+           OR built_volume_total_2000_m3 IS NULL
+           OR NOT isfinite(CAST(built_volume_total_2000_m3 AS DOUBLE))
+           OR CAST(built_volume_total_2000_m3 AS DOUBLE) < 0
+           OR built_volume_total_slope_m3_per_year IS NULL
+           OR NOT isfinite(
+               CAST(built_volume_total_slope_m3_per_year AS DOUBLE)
+           )
            OR n_valid_years IS NULL OR n_valid_years < 2
            OR beta_suhi IS NULL OR NOT isfinite(CAST(beta_suhi AS DOUBLE))
            OR beta_urban IS NULL OR NOT isfinite(CAST(beta_urban AS DOUBLE))
@@ -149,7 +165,8 @@ def _validate_source(
     if invalid_rows:
         raise ValueError(
             f"Seasonal trend table contains {invalid_rows:,} rows with invalid "
-            "season, slot, hemisphere, latitude, valid-year count, or beta values."
+            "season, slot, city metadata, GHSL metadata, valid-year count, "
+            "or beta values."
         )
 
     inconsistent_metadata = connection.execute(
@@ -164,6 +181,10 @@ def _validate_source(
                 OR COUNT(DISTINCT city_area_km2) > 1
                 OR COUNT(DISTINCT country) > 1
                 OR COUNT(DISTINCT GC_DEV_USR) > 1
+                OR COUNT(DISTINCT built_surface_2000_m2) > 1
+                OR COUNT(DISTINCT built_surface_slope_m2_per_year) > 1
+                OR COUNT(DISTINCT built_volume_total_2000_m3) > 1
+                OR COUNT(DISTINCT built_volume_total_slope_m3_per_year) > 1
                 OR COUNT(DISTINCT LOWER(TRIM(hemisphere))) > 1
                 OR COUNT(DISTINCT climate) > 1
         )
@@ -172,7 +193,7 @@ def _validate_source(
     if inconsistent_metadata:
         raise ValueError(
             "Seasonal trend table has inconsistent city location, area, "
-            "country, region, hemisphere, or climate metadata."
+            "country, region, climate, hemisphere, or GHSL metadata."
         )
 
     invalid_hemisphere_latitude = connection.execute(
@@ -252,6 +273,14 @@ def _contrast_query(source: Path) -> str:
                 CAST(city_area_km2 AS DOUBLE) AS city_area_km2,
                 CAST(country AS VARCHAR) AS country,
                 CAST(GC_DEV_USR AS VARCHAR) AS GC_DEV_USR,
+                CAST(built_surface_2000_m2 AS DOUBLE)
+                    AS built_surface_2000_m2,
+                CAST(built_surface_slope_m2_per_year AS DOUBLE)
+                    AS built_surface_slope_m2_per_year,
+                CAST(built_volume_total_2000_m3 AS DOUBLE)
+                    AS built_volume_total_2000_m3,
+                CAST(built_volume_total_slope_m3_per_year AS DOUBLE)
+                    AS built_volume_total_slope_m3_per_year,
                 LOWER(TRIM(hemisphere)) AS hemisphere,
                 season,
                 slot,
@@ -271,6 +300,10 @@ def _contrast_query(source: Path) -> str:
                 summer.city_area_km2,
                 summer.country,
                 summer.GC_DEV_USR,
+                summer.built_surface_2000_m2,
+                summer.built_surface_slope_m2_per_year,
+                summer.built_volume_total_2000_m3,
+                summer.built_volume_total_slope_m3_per_year,
                 summer.hemisphere,
                 summer.slot,
                 CASE
@@ -310,6 +343,10 @@ def _contrast_query(source: Path) -> str:
             city_area_km2,
             country,
             GC_DEV_USR,
+            built_surface_2000_m2,
+            built_surface_slope_m2_per_year,
+            built_volume_total_2000_m3,
+            built_volume_total_slope_m3_per_year,
             hemisphere,
             slot,
             summer_season,

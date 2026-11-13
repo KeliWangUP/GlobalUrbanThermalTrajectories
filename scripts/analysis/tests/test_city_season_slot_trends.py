@@ -36,6 +36,10 @@ def _write_seasonal_source(path: Path) -> None:
                     "country": "Country A" if city_id == 1 else "Country B",
                     "GC_DEV_USR": "Region A" if city_id == 1 else "Region B",
                     "koppen_geiger_class": climate,
+                    "built_surface_2000_m2": city_id * 1_000_000.0,
+                    "built_surface_slope_m2_per_year": city_id * 1_000.0,
+                    "built_volume_total_2000_m3": city_id * 10_000_000.0,
+                    "built_volume_total_slope_m3_per_year": city_id * 2_500.0,
                 }
                 for slot_index, slot in enumerate(SLOTS):
                     passed = year != 2007
@@ -92,7 +96,11 @@ class CitySeasonSlotTrendTests(unittest.TestCase):
             row = connection.execute(
                 """
                 SELECT climate, centroid_lon, centroid_lat, city_area_km2,
-                       country, GC_DEV_USR, hemisphere, season, slot,
+                       country, GC_DEV_USR, built_surface_2000_m2,
+                       built_surface_slope_m2_per_year,
+                       built_volume_total_2000_m3,
+                       built_volume_total_slope_m3_per_year,
+                       hemisphere, season, slot,
                        beta_suhi, beta_urban, beta_rural,
                        se_suhi, n_valid_years
                 FROM read_parquet(?)
@@ -111,15 +119,28 @@ class CitySeasonSlotTrendTests(unittest.TestCase):
             connection.close()
 
             self.assertEqual(
-                row[:9],
-                ("Af", 1.0, 20.0, 101.0, "Country A", "Region A", "north",
-                 "DJF", "terra_day"),
+                row[:13],
+                (
+                    "Af",
+                    1.0,
+                    20.0,
+                    101.0,
+                    "Country A",
+                    "Region A",
+                    1_000_000.0,
+                    1_000.0,
+                    10_000_000.0,
+                    2_500.0,
+                    "north",
+                    "DJF",
+                    "terra_day",
+                ),
             )
-            self.assertAlmostEqual(row[9], 1.0)
-            self.assertAlmostEqual(row[10], 2.0)
-            self.assertAlmostEqual(row[11], 1.0)
-            self.assertAlmostEqual(row[12], 0.0, places=10)
-            self.assertEqual(row[13], 16)
+            self.assertAlmostEqual(row[13], 1.0)
+            self.assertAlmostEqual(row[14], 2.0)
+            self.assertAlmostEqual(row[15], 1.0)
+            self.assertAlmostEqual(row[16], 0.0, places=10)
+            self.assertEqual(row[17], 16)
             self.assertEqual(missing_qc_fit_count, 0)
             self.assertTrue((output_dir / "manifest.json").is_file())
 

@@ -44,7 +44,17 @@ REQUIRED_COLUMNS = {
     "gamma_urban",
     "gamma_rural",
     "GC_DEV_USR",
+    "built_surface_2000_m2",
+    "built_surface_slope_m2_per_year",
+    "built_volume_total_2000_m3",
+    "built_volume_total_slope_m3_per_year",
 }
+GHSL_COLUMNS = (
+    "built_surface_2000_m2",
+    "built_surface_slope_m2_per_year",
+    "built_volume_total_2000_m3",
+    "built_volume_total_slope_m3_per_year",
+)
 
 
 def _sha256(path: Path) -> str:
@@ -232,6 +242,17 @@ def _validate_gamma_trends(
             f"{max_error:.12g}, tolerance={tolerance:.12g}."
         )
     frame.loc[:, metric_columns] = values
+    ghsl_values = frame[list(GHSL_COLUMNS)].apply(
+        pd.to_numeric, errors="raise"
+    )
+    if not np.isfinite(ghsl_values.to_numpy(dtype="float64")).all():
+        raise ValueError("Seasonal gamma table contains non-finite GHSL values.")
+    if (
+        ghsl_values["built_surface_2000_m2"].lt(0).any()
+        or ghsl_values["built_volume_total_2000_m3"].lt(0).any()
+    ):
+        raise ValueError("GHSL built-surface and volume baselines must be non-negative.")
+    frame.loc[:, list(GHSL_COLUMNS)] = ghsl_values
     return max_error
 
 
@@ -468,6 +489,88 @@ def _plot_synchrony_scatter(
     return figure
 
 
+def _plot_building_growth_scatter(
+    frame: pd.DataFrame,
+    growth_column: str,
+    growth_scale: float,
+    growth_label: str,
+    growth_name: str,
+    major_climate_group: str,
+    hemisphere: str,
+):
+    categories = sorted(frame["climate"].astype("string").str.strip().unique())
+    color_map = plt.get_cmap("tab20")
+    colors = color_map(np.linspace(0, 1, max(len(categories), 1)))
+    category_colors = dict(zip(categories, colors))
+    figure, axes = plt.subplots(
+        len(GAMMA_METRICS),
+        len(SLOTS),
+        figsize=(20, 12.5),
+        squeeze=False,
+        sharex=True,
+    )
+    for row_index, (gamma_column, gamma_label, _) in enumerate(GAMMA_METRICS):
+        for column_index, (slot, slot_label, _, _) in enumerate(SLOTS):
+            axis = axes[row_index, column_index]
+            slot_frame = frame.loc[frame["slot"].eq(slot)]
+            slot_categories = (
+                slot_frame["climate"].astype("string").str.strip()
+            )
+            for category in categories:
+                category_rows = slot_frame.loc[
+                    slot_categories.eq(category).to_numpy()
+                ]
+                if category_rows.empty:
+                    continue
+                axis.scatter(
+                    category_rows[growth_column] / growth_scale,
+                    category_rows[gamma_column],
+                    color=category_colors[category],
+                    s=14,
+                    alpha=0.6,
+                    linewidths=0,
+                    label=category if row_index == 0 and column_index == 0 else "_nolegend_",
+                )
+            axis.axhline(0, color="0.35", linewidth=0.7, alpha=0.7)
+            axis.grid(alpha=0.2)
+            axis.set_title(f"{slot_label} (n={len(slot_frame):,})")
+            if row_index == len(GAMMA_METRICS) - 1:
+                axis.set_xlabel(growth_label)
+            if column_index == 0:
+                axis.set_ylabel(f"{gamma_label} (°C/decade)")
+
+    legend_handles = [
+        Line2D(
+            [0],
+            [0],
+            marker="o",
+            linestyle="",
+            markersize=6,
+            markerfacecolor=category_colors[category],
+            markeredgecolor="none",
+            label=category,
+        )
+        for category in categories
+    ]
+    figure.legend(
+        handles=legend_handles,
+        title="Köppen subclass",
+        loc="lower center",
+        ncol=min(len(legend_handles), 8),
+        frameon=False,
+        bbox_to_anchor=(0.5, 0.01),
+    )
+    figure.suptitle(
+        f"City-level seasonal γ versus GHSL {growth_name} growth\n"
+        f"Major climate {major_climate_group}; hemisphere: {hemisphere}; "
+        "color = Köppen subclass",
+        y=0.99,
+        fontsize=14,
+    )
+    figure.tight_layout(rect=(0, 0.06, 1, 0.94))
+    return figure
+
+
 def build_city_seasonal_gamma_subclimate_figures(
     config_path: Path,
 ) -> Path:
@@ -585,6 +688,45 @@ def build_city_seasonal_gamma_subclimate_figures(
         )
         plt.close(scatter_region)
 
+        growth_figures = []
+        for (
+            growth_column,
+            growth_scale,
+            growth_label,
+            growth_name,
+            output_name,
+        ) in (
+            (
+                "built_surface_slope_m2_per_year",
+                1_000_000,
+                "Built-surface OLS slope (km²/year, 2000–2020)",
+                "built-surface",
+                "figure_5_gamma_vs_built_surface_growth.png",
+            ),
+            (
+                "built_volume_total_slope_m3_per_year",
+                1_000_000,
+                "Built-volume OLS slope (million m³/year, 2000–2020)",
+                "built-volume",
+                "figure_6_gamma_vs_built_volume_growth.png",
+            ),
+        ):
+            growth_figure = _plot_building_growth_scatter(
+                selected,
+                growth_column,
+                growth_scale,
+                growth_label,
+                growth_name,
+                config["major_climate_group"],
+                config["hemisphere"],
+            )
+            growth_path = staging / output_name
+            growth_figure.savefig(
+                growth_path, dpi=config["dpi"], bbox_inches="tight"
+            )
+            plt.close(growth_figure)
+            growth_figures.append(growth_path)
+
         manifest = {
             "format_version": 1,
             "created_at": datetime.now(timezone.utc).isoformat(),
@@ -615,6 +757,20 @@ def build_city_seasonal_gamma_subclimate_figures(
                     "region": "GC_DEV_USR",
                 },
             },
+            "building_growth_scatter": {
+                "x_metrics": {
+                    "built_surface": {
+                        "source_column": "built_surface_slope_m2_per_year",
+                        "display_unit": "km2/year",
+                    },
+                    "built_volume": {
+                        "source_column": "built_volume_total_slope_m3_per_year",
+                        "display_unit": "million m3/year",
+                    },
+                },
+                "y_metrics": [metric for metric, _, _ in GAMMA_METRICS],
+                "color_by": "climate",
+            },
             "summary_note": (
                 "Urban, rural, and SUHI subclass medians and IQRs are "
                 "computed independently across cities and are not additive."
@@ -624,6 +780,7 @@ def build_city_seasonal_gamma_subclimate_figures(
                 figure_two_path.name,
                 scatter_subclimate_path.name,
                 scatter_region_path.name,
+                *(path.name for path in growth_figures),
                 summary_path.name,
             ],
         }

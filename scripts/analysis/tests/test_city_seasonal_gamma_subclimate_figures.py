@@ -15,6 +15,7 @@ sys.path.insert(0, str(MODULE_DIR))
 
 from src.city_seasonal_gamma_subclimate_figures import (
     _publish_staged_outputs,
+    _validate_gamma_trends,
     build_city_seasonal_gamma_subclimate_figures,
     summarize_subclimate_gammas,
 )
@@ -48,6 +49,14 @@ def _gamma_trends():
                     "gamma_urban": gamma_urban,
                     "gamma_rural": gamma_rural,
                     "gamma_suhi": gamma_urban - gamma_rural,
+                    "built_surface_2000_m2": city_id * 1_000_000.0,
+                    "built_surface_slope_m2_per_year": (
+                        (city_id - 2) * 2_500.0
+                    ),
+                    "built_volume_total_2000_m3": city_id * 10_000_000.0,
+                    "built_volume_total_slope_m3_per_year": (
+                        (city_id - 2) * 5_000.0
+                    ),
                 }
             )
     return pd.DataFrame(rows)
@@ -96,6 +105,14 @@ class CitySeasonalGammaSubclimateFigureTests(unittest.TestCase):
         self.assertEqual(cfa["median_gamma_suhi"], 1.0)
         self.assertEqual(cfa["median_gamma_urban"], 2.0)
         self.assertEqual(cfa["median_gamma_rural"], 1.0)
+
+    def test_validates_ghsl_growth_features(self):
+        frame = _gamma_trends()
+        self.assertEqual(_validate_gamma_trends(frame, 1e-8), 0.0)
+
+        frame.loc[0, "built_surface_slope_m2_per_year"] = float("nan")
+        with self.assertRaisesRegex(ValueError, "non-finite GHSL"):
+            _validate_gamma_trends(frame, 1e-8)
 
     def test_creates_subclimate_gamma_figures_with_hemisphere_filter(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -152,6 +169,12 @@ class CitySeasonalGammaSubclimateFigureTests(unittest.TestCase):
                     / "figure_4_city_seasonal_synchrony_by_region.png"
                 ).is_file()
             )
+            self.assertTrue(
+                (output_dir / "figure_5_gamma_vs_built_surface_growth.png").is_file()
+            )
+            self.assertTrue(
+                (output_dir / "figure_6_gamma_vs_built_volume_growth.png").is_file()
+            )
             summary = pd.read_csv(
                 output_dir / "subclimate_seasonal_gamma_summary.csv"
             )
@@ -168,6 +191,16 @@ class CitySeasonalGammaSubclimateFigureTests(unittest.TestCase):
             )
             self.assertEqual(
                 manifest["synchrony_scatter"]["y"], "gamma_urban"
+            )
+            self.assertEqual(
+                manifest["building_growth_scatter"]["y_metrics"],
+                ["gamma_urban", "gamma_rural", "gamma_suhi"],
+            )
+            self.assertEqual(
+                manifest["building_growth_scatter"]["x_metrics"][
+                    "built_surface"
+                ]["source_column"],
+                "built_surface_slope_m2_per_year",
             )
 
 

@@ -235,7 +235,11 @@ season-specific QC flag and finite urban, rural, and SUHI means; the minimum
 valid-year rule defaults to 15. The trend table includes β and standard error
 for urban, rural, and SUHI LST, plus centroid longitude/latitude, GHSL area,
 country, `GC_DEV_USR` region, climate, hemisphere, and the number of valid
-seasonal observations.
+seasonal observations. It also retains GHSL's 2000 built-surface and built-
+volume baselines and their 2000–2020 OLS slopes. Run
+`04_merge_city_metadata.py` first so those GHSL features are present in
+`suhi_seasonal.parquet`; the default output directory is versioned with
+`_with_ghsl` to preserve the existing trend product.
 
 Generate the matching climate summaries and figures with:
 
@@ -296,8 +300,11 @@ medians are calculated independently. Figures 3 and 4 show city-level
 γUrban-versus-γRural scatterplots, colored by Köppen subclass and GHSL
 `GC_DEV_USR` region, respectively. Both retain the configured hemisphere and
 subclass selection and use y=x as the synchrony reference; vertical distance
-from the line is γSUHI. The output directory includes all four figures, a
-summary CSV, and a provenance manifest. Re-running replaces files generated
+from the line is γSUHI. Figures 5 and 6 relate each city/slot's γUrban, γRural,
+and γSUHI to the GHSL built-surface and built-volume OLS slopes, respectively;
+points are colored by Köppen subclass. These figures use the same configured
+climate and hemisphere filters. The output directory includes all six figures,
+a summary CSV, and a provenance manifest. Re-running replaces files generated
 by this script while preserving other files in the output directory. On POSIX
 servers, generated files use group-readable/writable permissions (files `664`,
 directories `2775`); the output directory's group must be shared with the SFTP

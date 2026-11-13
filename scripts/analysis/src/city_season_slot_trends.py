@@ -89,6 +89,10 @@ def _source_columns() -> set[str]:
         "country",
         "GC_DEV_USR",
         "koppen_geiger_class",
+        "built_surface_2000_m2",
+        "built_surface_slope_m2_per_year",
+        "built_volume_total_2000_m3",
+        "built_volume_total_slope_m3_per_year",
     }
     for slot in SLOTS:
         required.update(
@@ -147,14 +151,18 @@ def _validate_source(
                 OR COUNT(DISTINCT country) > 1
                 OR COUNT(DISTINCT GC_DEV_USR) > 1
                 OR COUNT(DISTINCT koppen_geiger_class) > 1
+                OR COUNT(DISTINCT built_surface_2000_m2) > 1
+                OR COUNT(DISTINCT built_surface_slope_m2_per_year) > 1
+                OR COUNT(DISTINCT built_volume_total_2000_m3) > 1
+                OR COUNT(DISTINCT built_volume_total_slope_m3_per_year) > 1
         )
         """,
         [source.as_posix()],
     ).fetchone()[0]
     if inconsistent_metadata:
         raise ValueError(
-            "Seasonal SUHI table has inconsistent location, area, country, "
-            "region, or climate metadata within a city."
+            "Seasonal SUHI table has inconsistent city location, area, "
+            "country, climate, or GHSL built-development metadata."
         )
 
     invalid_city_metadata = connection.execute(
@@ -172,13 +180,25 @@ def _validate_source(
            OR CAST(city_area_km2 AS DOUBLE) <= 0
            OR country IS NULL OR TRIM(CAST(country AS VARCHAR)) = ''
            OR GC_DEV_USR IS NULL OR TRIM(CAST(GC_DEV_USR AS VARCHAR)) = ''
+           OR built_surface_2000_m2 IS NULL
+           OR NOT isfinite(CAST(built_surface_2000_m2 AS DOUBLE))
+           OR CAST(built_surface_2000_m2 AS DOUBLE) < 0
+           OR built_surface_slope_m2_per_year IS NULL
+           OR NOT isfinite(CAST(built_surface_slope_m2_per_year AS DOUBLE))
+           OR built_volume_total_2000_m3 IS NULL
+           OR NOT isfinite(CAST(built_volume_total_2000_m3 AS DOUBLE))
+           OR CAST(built_volume_total_2000_m3 AS DOUBLE) < 0
+           OR built_volume_total_slope_m3_per_year IS NULL
+           OR NOT isfinite(
+               CAST(built_volume_total_slope_m3_per_year AS DOUBLE)
+           )
         """,
         [source.as_posix()],
     ).fetchone()[0]
     if invalid_city_metadata:
         raise ValueError(
-            "Seasonal SUHI table contains invalid centroid coordinates, "
-            "city area, country, or GC_DEV_USR region metadata."
+            "Seasonal SUHI table contains invalid city location, climate, "
+            "or GHSL built-development metadata."
         )
 
     invalid_qc_types = [
@@ -240,6 +260,14 @@ def _trend_query(
                 CAST(country AS VARCHAR) AS country,
                 CAST(GC_DEV_USR AS VARCHAR) AS GC_DEV_USR,
                 CAST(koppen_geiger_class AS VARCHAR) AS climate,
+                CAST(built_surface_2000_m2 AS DOUBLE)
+                    AS built_surface_2000_m2,
+                CAST(built_surface_slope_m2_per_year AS DOUBLE)
+                    AS built_surface_slope_m2_per_year,
+                CAST(built_volume_total_2000_m3 AS DOUBLE)
+                    AS built_volume_total_2000_m3,
+                CAST(built_volume_total_slope_m3_per_year AS DOUBLE)
+                    AS built_volume_total_slope_m3_per_year,
                 {", ".join(
                     f"CAST({column} AS DOUBLE) AS {column}"
                     for slot in SLOTS
@@ -262,6 +290,10 @@ def _trend_query(
                 seasonal.city_area_km2,
                 seasonal.country,
                 seasonal.GC_DEV_USR,
+                seasonal.built_surface_2000_m2,
+                seasonal.built_surface_slope_m2_per_year,
+                seasonal.built_volume_total_2000_m3,
+                seasonal.built_volume_total_slope_m3_per_year,
                 CASE
                     WHEN seasonal.centroid_lat > 0 THEN 'north'
                     WHEN seasonal.centroid_lat < 0 THEN 'south'
@@ -296,6 +328,10 @@ def _trend_query(
                 city_area_km2,
                 country,
                 GC_DEV_USR,
+                built_surface_2000_m2,
+                built_surface_slope_m2_per_year,
+                built_volume_total_2000_m3,
+                built_volume_total_slope_m3_per_year,
                 hemisphere,
                 season,
                 slot,
@@ -321,6 +357,10 @@ def _trend_query(
                 city_area_km2,
                 country,
                 GC_DEV_USR,
+                built_surface_2000_m2,
+                built_surface_slope_m2_per_year,
+                built_volume_total_2000_m3,
+                built_volume_total_slope_m3_per_year,
                 hemisphere,
                 season,
                 slot
@@ -334,6 +374,10 @@ def _trend_query(
             city_area_km2,
             country,
             GC_DEV_USR,
+            built_surface_2000_m2,
+            built_surface_slope_m2_per_year,
+            built_volume_total_2000_m3,
+            built_volume_total_slope_m3_per_year,
             hemisphere,
             season,
             slot,
