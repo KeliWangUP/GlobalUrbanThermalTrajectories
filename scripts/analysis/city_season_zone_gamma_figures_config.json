@@ -1,0 +1,11 @@
+{
+  "paths": {
+    "gamma_file": "../../data/processed/gold/city_season_zone_trends_2000_isa_0p7_2003_2024/city_season_zone_gamma_2003_2024.parquet",
+    "output_dir": "../../data/processed/result/city_season_zone_gamma_C_all"
+  },
+  "major_climate_group": "C",
+  "subclimate_classes": [],
+  "hemisphere": "all",
+  "dpi": 240,
+  "decomposition_tolerance": 1e-8
+}

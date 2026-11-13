@@ -1,0 +1,30 @@
+{
+  "paths": {
+    "monthly_zone_gold": "../../data/processed/gold/city_month_trends_stable_development_2000_isa_0p7/city_month_zone_paired_qc.parquet",
+    "gold_manifest": "../../data/processed/gold/city_month_trends_stable_development_2000_isa_0p7/manifest.json",
+    "output_dir": "../../data/processed/gold/city_season_zone_trends_2000_isa_0p7_2003_2024"
+  },
+  "urban_classification": {
+    "baseline_year": 2000,
+    "stable_isa_threshold": 0.7,
+    "stable_label": "stable",
+    "development_label": "development"
+  },
+  "urban_groups": ["stable", "development", "overall"],
+  "windows": [
+    [2003, 2019],
+    [2003, 2024]
+  ],
+  "qc": {
+    "min_valid_months_per_season": 2,
+    "min_valid_year_fraction": 0.75,
+    "min_each_half_fraction": 0.5,
+    "max_missing_span_years": 3
+  },
+  "beta_scale_years": 10,
+  "decomposition_tolerance": 1e-8,
+  "processing": {
+    "duckdb_threads": 2,
+    "duckdb_memory": "1GB"
+  }
+}
