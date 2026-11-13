@@ -50,7 +50,7 @@ class CityMonthGoldTests(unittest.TestCase):
                            {", ".join(slot_fields)}
                     FROM range(2000, 2004) AS years(year)
                     CROSS JOIN range(1, 13) AS months(month)
-                    CROSS JOIN range(0, 2) AS pixels(pixel_x)
+                    CROSS JOIN range(0, 4) AS pixels(pixel_x)
                 """
                 _copy_query(
                     connection,
@@ -60,13 +60,22 @@ class CityMonthGoldTests(unittest.TestCase):
 
             development_query = """
                 SELECT 10::INTEGER AS ID_UC_G0, 'MODIS_10_0'::VARCHAR AS pixel_id,
-                       0.0::FLOAT AS water_fraction
+                       0.0::FLOAT AS water_fraction,
+                       0.8::FLOAT AS isa_urban_fraction_2000
                 UNION ALL
-                SELECT 10::INTEGER, 'MODIS_10_1'::VARCHAR, 0.1::FLOAT
+                SELECT 10::INTEGER, 'MODIS_10_1'::VARCHAR, 0.1::FLOAT, 0.9::FLOAT
                 UNION ALL
-                SELECT 20::INTEGER, 'MODIS_20_0'::VARCHAR, 0.0::FLOAT
+                SELECT 10::INTEGER, 'MODIS_10_2'::VARCHAR, 0.0::FLOAT, 0.4::FLOAT
                 UNION ALL
-                SELECT 20::INTEGER, 'MODIS_20_1'::VARCHAR, 0.1::FLOAT
+                SELECT 10::INTEGER, 'MODIS_10_3'::VARCHAR, 0.1::FLOAT, 0.6::FLOAT
+                UNION ALL
+                SELECT 20::INTEGER, 'MODIS_20_0'::VARCHAR, 0.0::FLOAT, 0.8::FLOAT
+                UNION ALL
+                SELECT 20::INTEGER, 'MODIS_20_1'::VARCHAR, 0.1::FLOAT, 0.9::FLOAT
+                UNION ALL
+                SELECT 20::INTEGER, 'MODIS_20_2'::VARCHAR, 0.0::FLOAT, 0.4::FLOAT
+                UNION ALL
+                SELECT 20::INTEGER, 'MODIS_20_3'::VARCHAR, 0.1::FLOAT, 0.6::FLOAT
             """
             development = root / "pixel_development.parquet"
             _copy_query(connection, development_query, development)
@@ -155,6 +164,37 @@ class CityMonthGoldTests(unittest.TestCase):
                 [str(output_dir / "city_month_paired_qc.parquet")],
             ).fetchone()[0]
             self.assertEqual(paired_rows, 2 * 4 * 12 * 4)
+            zone_path = output_dir / "city_month_zone_paired_qc.parquet"
+            zone_rows, valid_zone_rows = result.execute(
+                """
+                SELECT COUNT(*), COUNT(*) FILTER (WHERE paired_valid)
+                FROM read_parquet(?)
+                """,
+                [str(zone_path)],
+            ).fetchone()
+            self.assertEqual(zone_rows, 2 * 3 * 4 * 12 * 4)
+            self.assertEqual(valid_zone_rows, zone_rows)
+            zone_labels = {
+                row[0]
+                for row in result.execute(
+                    "SELECT DISTINCT urban_zone FROM read_parquet(?)",
+                    [str(zone_path)],
+                ).fetchall()
+            }
+            self.assertEqual(zone_labels, {"stable", "development", "overall"})
+            classified_counts = result.execute(
+                """
+                SELECT urban_zone, COUNT(*)
+                FROM read_parquet(?)
+                WHERE water_eligible
+                GROUP BY urban_zone
+                """,
+                [str(output_dir / "city_pixel_classification.parquet")],
+            ).fetchall()
+            self.assertEqual(
+                dict(classified_counts),
+                {"stable": 4, "development": 4},
+            )
 
             wide_path = output_dir / "city_month_trend_wide_2000_2003.parquet"
             city_count, slope, climate = result.execute(
@@ -172,6 +212,13 @@ class CityMonthGoldTests(unittest.TestCase):
             self.assertAlmostEqual(slope, 0.5)
             self.assertEqual(climate, "Tropical")
             self.assertTrue((output_dir / "manifest.json").is_file())
+            gold_manifest = json.loads(
+                (output_dir / "manifest.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                gold_manifest["urban_classification"]["stable_isa_threshold"],
+                0.7,
+            )
             result.close()
 
     def test_refuses_to_overwrite_an_existing_gold_directory(self):

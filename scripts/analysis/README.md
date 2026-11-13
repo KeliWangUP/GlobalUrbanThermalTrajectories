@@ -108,10 +108,15 @@ python scripts/analysis/build_city_month_gold.py
 
 By default the builder uses years 2000–2024 and publishes two trend windows,
 2003–2019 and 2003–2024, under
-`data/processed/gold/city_month_trends`. It creates:
+`data/processed/gold/city_month_trends_stable_development_2000_isa_0p7`. It
+creates:
 
 - `city_month_paired_qc.parquet`: matched city/month/sensor-slot observations,
   QC flags, urban/rural means, and SUHI.
+- `city_pixel_classification.parquet`: each pixel's initial ISA fraction,
+  stable/development label, and water-eligibility flag.
+- `city_month_zone_paired_qc.parquet`: matched monthly records for stable,
+  development, and overall urban zones, with rural observations and SUHI.
 - `city_month_slot_trends_<start>_<end>.parquet`: long-form slopes and QC
   diagnostics for each city/month/slot.
 - `city_month_trend_wide_<start>_<end>.parquet`: one row per priority city,
@@ -124,6 +129,42 @@ complete city/month coverage, development-to-LST pixel counts, climate
 metadata coverage, and the final one-row-per-city output. Existing Gold
 output is never overwritten; choose a new `output_dir` in the config to create
 another build.
+
+The zone classification uses the configured initial ISA fraction column
+(`isa_urban_fraction_2000`) and `urban_classification.stable_isa_threshold`
+(default `0.7`); pixels below the threshold are labeled development. The
+water-eligible mask is applied before the urban-zone monthly aggregates are
+computed. Stable, development, and overall zone outputs are built in this
+same Gold run; there is no separate zone-generation command.
+
+### Seasonal trends and γ by urban pixel zone
+
+After building the Gold dataset, calculate seasonal means and trends for the
+stable, development, and overall urban zones, along with rural and SUHI trends:
+
+```bash
+python scripts/analysis/build_city_season_zone_trends.py
+```
+
+[`city_season_zone_trends_config.json`](./city_season_zone_trends_config.json)
+reads `city_month_zone_paired_qc.parquet` and the manifest from the Gold output
+directory above. It verifies the ISA classification settings against the Gold
+manifest. December is assigned to the following year's DJF season; valid
+monthly city means are equally weighted, with at least two valid months by
+default. Trends are in °C per decade. γ is summer-minus-winter: JJA−DJF in the
+Northern Hemisphere and DJF−JJA in the Southern Hemisphere; equatorial cities
+are excluded.
+
+To compare γ across urban zones and Köppen subclasses:
+
+```bash
+python scripts/analysis/plot_city_season_zone_gamma.py
+```
+
+[`city_season_zone_gamma_figures_config.json`](./city_season_zone_gamma_figures_config.json)
+controls the Köppen major group, optional subclasses, hemisphere (`all`,
+`north`, or `south`), and output directory. The figures compare zone-level
+γSUHI distributions and plot γR versus γU with y=x as the synchrony reference.
 
 ### Gold completeness and trend diagnostics
 

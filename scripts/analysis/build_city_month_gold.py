@@ -161,6 +161,41 @@ def _validate_config(config: dict[str, Any]) -> None:
     for section in ("pixel", "development", "rural", "climate"):
         if not isinstance(config["columns"].get(section), dict):
             raise ValueError(f"Gold config 'columns.{section}' must be an object.")
+    classification = config.get("urban_classification")
+    if not isinstance(classification, dict):
+        raise ValueError("Gold config requires an 'urban_classification' object.")
+    if (
+        type(classification.get("baseline_year")) is not int
+        or classification["baseline_year"] < 1
+    ):
+        raise ValueError("urban_classification.baseline_year must be positive.")
+    threshold = classification.get("stable_isa_threshold")
+    if (
+        isinstance(threshold, bool)
+        or not isinstance(threshold, (int, float))
+        or not math.isfinite(threshold)
+        or not 0 <= threshold <= 1
+    ):
+        raise ValueError(
+            "urban_classification.stable_isa_threshold must be in [0, 1]."
+        )
+    labels = (
+        classification.get("stable_label"),
+        classification.get("development_label"),
+    )
+    if (
+        any(not isinstance(label, str) or not label.strip() for label in labels)
+        or labels[0].strip() == labels[1].strip()
+    ):
+        raise ValueError(
+            "Urban classification requires distinct stable and development labels."
+        )
+    classification["stable_label"] = labels[0].strip()
+    classification["development_label"] = labels[1].strip()
+    if "initial_isa_fraction" not in config["columns"]["development"]:
+        raise ValueError(
+            "Gold config 'columns.development' requires 'initial_isa_fraction'."
+        )
     for section in ("pixel", "rural"):
         if not isinstance(config["slots"].get(section), dict):
             raise ValueError(f"Gold config 'slots.{section}' must be an object.")
@@ -270,11 +305,13 @@ def create_city_pixels(
         CREATE OR REPLACE TEMP TABLE development_pixels AS
         SELECT CAST({ident(columns['city'])} AS BIGINT) AS city_id,
                CAST({ident(columns['pixel_id'])} AS VARCHAR) AS pixel_id,
-               CAST({ident(columns['water_fraction'])} AS DOUBLE) AS water_fraction
+               CAST({ident(columns['water_fraction'])} AS DOUBLE) AS water_fraction,
+               CAST({ident(columns['initial_isa_fraction'])} AS DOUBLE)
+                   AS initial_isa_fraction
         FROM {source}
     """)
 
-    row_count, unique_count, bad_keys, bad_water = connection.execute("""
+    row_count, unique_count, bad_keys, bad_water, bad_isa = connection.execute("""
         SELECT COUNT(*),
                COUNT(DISTINCT (city_id, pixel_id)),
                COUNT(*) FILTER (
@@ -287,6 +324,11 @@ def create_city_pixels(
                   WHERE water_fraction IS NOT NULL
                     AND (NOT isfinite(water_fraction)
                          OR water_fraction < 0 OR water_fraction > 1)
+               ),
+               COUNT(*) FILTER (
+                  WHERE initial_isa_fraction IS NULL
+                     OR NOT isfinite(initial_isa_fraction)
+                     OR initial_isa_fraction < 0 OR initial_isa_fraction > 1
                )
         FROM development_pixels
     """).fetchone()
@@ -300,6 +342,11 @@ def create_city_pixels(
         raise ValueError(
             f"Development data has {bad_water} non-finite or out-of-range "
             "water fractions."
+        )
+    if bad_isa:
+        raise ValueError(
+            f"Development data has {bad_isa} missing, non-finite, or "
+            "out-of-range initial ISA fractions."
         )
 
     city_ids = {
@@ -322,6 +369,39 @@ def create_city_pixels(
         FROM development_pixels
         WHERE water_fraction IS NOT NULL
           AND water_fraction <= {threshold}
+    """)
+    classification = config["urban_classification"]
+    stable_label = literal(classification["stable_label"])
+    development_label = literal(classification["development_label"])
+    isa_threshold = float(classification["stable_isa_threshold"])
+    connection.execute(f"""
+        CREATE OR REPLACE TEMP TABLE pixel_classification AS
+        SELECT d.city_id,
+               d.pixel_id,
+               d.water_fraction,
+               d.initial_isa_fraction,
+               CASE WHEN d.initial_isa_fraction >= {isa_threshold}
+                    THEN {stable_label} ELSE {development_label} END
+                   AS urban_zone,
+               e.pixel_id IS NOT NULL AS water_eligible
+        FROM development_pixels d
+        LEFT JOIN eligible_pixels e USING (city_id, pixel_id)
+    """)
+    connection.execute("""
+        CREATE OR REPLACE TEMP TABLE zone_pixel_membership AS
+        SELECT city_id, pixel_id, urban_zone
+        FROM pixel_classification
+        WHERE water_eligible
+        UNION ALL
+        SELECT city_id, pixel_id, 'overall' AS urban_zone
+        FROM pixel_classification
+        WHERE water_eligible
+    """)
+    connection.execute("""
+        CREATE OR REPLACE TEMP TABLE city_zone_pixel_stats AS
+        SELECT city_id, urban_zone, COUNT(*) AS n_pixels_eligible
+        FROM zone_pixel_membership
+        GROUP BY city_id, urban_zone
     """)
     connection.execute("""
         CREATE OR REPLACE TEMP TABLE city_pixel_stats AS
@@ -358,6 +438,32 @@ def create_city_pixels(
     print(
         f"[PIXEL MASK] cities={stats[0]:,}; total={stats[1]:,}; "
         f"eligible={stats[2]:,}; missing water={stats[3]:,}",
+        flush=True,
+    )
+    zone_stats = connection.execute("""
+        SELECT COUNT(*) FILTER (
+                   WHERE water_eligible
+                     AND urban_zone = ?
+               ),
+               COUNT(*) FILTER (
+                   WHERE water_eligible
+                     AND urban_zone = ?
+               ),
+               COUNT(*) FILTER (WHERE water_eligible)
+        FROM pixel_classification
+    """, [
+        classification["stable_label"],
+        classification["development_label"],
+    ]).fetchone()
+    if zone_stats[0] + zone_stats[1] != zone_stats[2]:
+        raise ValueError(
+            "Stable and development pixel counts do not sum to the "
+            "water-eligible pixel count."
+        )
+    print(
+        f"[PIXEL ZONES] stable={zone_stats[0]:,}; "
+        f"development={zone_stats[1]:,}; eligible={zone_stats[2]:,}; "
+        f"ISA threshold={isa_threshold:g} in {classification['baseline_year']}",
         flush=True,
     )
 
@@ -437,6 +543,77 @@ def create_urban_month(
             f"invalid_dates={invalid_dates}."
         )
     print(f"[AGGREGATE] {actual_rows:,} urban city-month rows.", flush=True)
+
+
+def create_zone_urban_month(
+    connection: duckdb.DuckDBPyConnection,
+    config: dict[str, Any],
+) -> None:
+    source = parquet_scan(config["paths"]["pixel_lst"])
+    columns = config["columns"]["pixel"]
+    required = dict(columns)
+    for slot, names in config["slots"]["pixel"].items():
+        required.update({f"{slot}.{name}": field for name, field in names.items()})
+    check_columns(connection, source, required, "pixel_lst")
+
+    slot_sql = ",\n               ".join(
+        pixel_slot_aggregates(config, slot) for slot in SLOTS
+    )
+    connection.execute(f"""
+        CREATE OR REPLACE TEMP TABLE zone_urban_month AS
+        SELECT e.city_id,
+               e.urban_zone,
+               CAST(p.{ident(columns['year'])} AS INTEGER) AS year,
+               CAST(p.{ident(columns['month'])} AS INTEGER) AS month,
+               COUNT(*) AS input_pixel_rows,
+               {slot_sql}
+        FROM {source} AS p
+        JOIN zone_pixel_membership AS e
+          ON CAST(p.{ident(columns['city'])} AS BIGINT) = e.city_id
+         AND CAST(p.{ident(columns['pixel_id'])} AS VARCHAR) = e.pixel_id
+        GROUP BY 1, 2, 3, 4
+    """)
+
+    mismatches = connection.execute("""
+        SELECT COUNT(*)
+        FROM zone_urban_month u
+        JOIN city_zone_pixel_stats s
+          ON u.city_id = s.city_id AND u.urban_zone = s.urban_zone
+        WHERE u.input_pixel_rows != s.n_pixels_eligible
+    """).fetchone()[0]
+    if mismatches:
+        raise ValueError(
+            f"{mismatches} zone city-months do not contain exactly the "
+            "eligible pixel count."
+        )
+
+    start = config["study"]["start_year"]
+    end = config["study"]["end_year"]
+    expected_rows = (
+        connection.execute(
+            "SELECT COUNT(*) FROM city_zone_pixel_stats"
+        ).fetchone()[0]
+        * (end - start + 1)
+        * 12
+    )
+    actual_rows, invalid_dates = connection.execute(f"""
+        SELECT COUNT(*),
+               COUNT(*) FILTER (
+                   WHERE year < {start} OR year > {end}
+                      OR month < 1 OR month > 12
+               )
+        FROM zone_urban_month
+    """).fetchone()
+    if actual_rows != expected_rows or invalid_dates:
+        raise ValueError(
+            "Zone urban city-month coverage is incomplete or out of range: "
+            f"rows={actual_rows}, expected={expected_rows}, "
+            f"invalid_dates={invalid_dates}."
+        )
+    print(
+        f"[ZONE AGGREGATE] {actual_rows:,} zone city-month rows.",
+        flush=True,
+    )
 
 
 def _rural_select(config: dict[str, Any]) -> str:
@@ -587,6 +764,81 @@ def create_paired_months(
             f"expected {expected_paired_rows:,}."
         )
     print(f"[PAIR] {paired_rows:,} city-month-slot rows.", flush=True)
+
+
+def create_zone_paired_months(
+    connection: duckdb.DuckDBPyConnection,
+    config: dict[str, Any],
+) -> None:
+    qc = config["qc"]
+    parts = []
+    for slot in SLOTS:
+        urban_valid = (
+            f"u.{ident(slot + '_valid_n')} >= {int(qc['min_urban_pixels'])} "
+            f"AND u.{ident(slot + '_valid_n')} * 1.0 / "
+            f"NULLIF(s.n_pixels_eligible, 0) >= "
+            f"{float(qc['min_urban_pixel_coverage'])} "
+            f"AND u.{ident(slot + '_lst')} IS NOT NULL"
+        )
+        rural_valid = (
+            f"r.{ident(slot + '_lst')} IS NOT NULL "
+            f"AND r.{ident(slot + '_clear')} >= "
+            f"{float(qc['min_rural_clear_days'])} "
+            f"AND r.{ident(slot + '_n8')} >= "
+            f"{float(qc['min_rural_n8day'])} "
+            f"AND r.{ident(slot + '_valid_n')} >= "
+            f"{int(qc['min_rural_pixels'])}"
+        )
+        parts.append(f"""
+            SELECT u.city_id, u.urban_zone, u.year, u.month,
+                   {literal(slot)} AS slot,
+                   u.{ident(slot + '_valid_n')} AS urban_valid_n,
+                   s.n_pixels_eligible AS urban_eligible_n,
+                   u.{ident(slot + '_valid_n')} * 1.0 /
+                       NULLIF(s.n_pixels_eligible, 0) AS urban_coverage,
+                   r.{ident(slot + '_valid_n')} AS rural_valid_n,
+                   COALESCE(({urban_valid}), FALSE) AS urban_qc_pass,
+                   COALESCE(({rural_valid}), FALSE) AS rural_qc_pass,
+                   CASE WHEN {urban_valid}
+                        THEN u.{ident(slot + '_lst')} END AS urban_lst,
+                   CASE WHEN {rural_valid}
+                        THEN r.{ident(slot + '_lst')} END AS rural_lst
+            FROM zone_urban_month u
+            JOIN rural_month r
+              ON u.city_id = r.city_id
+             AND u.year = r.year
+             AND u.month = r.month
+            JOIN city_zone_pixel_stats s
+              ON s.city_id = u.city_id AND s.urban_zone = u.urban_zone
+        """)
+    connection.execute(
+        "CREATE OR REPLACE TEMP TABLE zone_paired_months AS "
+        "SELECT *, urban_lst - rural_lst AS suhi, "
+        "urban_qc_pass AND rural_qc_pass AS paired_valid "
+        "FROM (" + " UNION ALL ".join(parts) + ") paired"
+    )
+
+    zone_city_count = connection.execute(
+        "SELECT COUNT(*) FROM city_zone_pixel_stats"
+    ).fetchone()[0]
+    expected_rows = (
+        zone_city_count
+        * (config["study"]["end_year"] - config["study"]["start_year"] + 1)
+        * 12
+        * len(SLOTS)
+    )
+    paired_rows = connection.execute(
+        "SELECT COUNT(*) FROM zone_paired_months"
+    ).fetchone()[0]
+    if paired_rows != expected_rows:
+        raise ValueError(
+            f"Zone-paired data has {paired_rows:,} rows; "
+            f"expected {expected_rows:,}."
+        )
+    print(
+        f"[ZONE PAIR] {paired_rows:,} city/month/slot/zone rows.",
+        flush=True,
+    )
 
 
 def create_climate_info(
@@ -868,7 +1120,9 @@ def build_gold(config_path: Path) -> Path:
 
         create_city_pixels(connection, config, priority_city_ids)
         create_urban_month(connection, config)
+        create_zone_urban_month(connection, config)
         create_paired_months(connection, config, priority_city_ids)
+        create_zone_paired_months(connection, config)
         create_climate_info(connection, config, priority_city_ids)
 
         paired_path = staging / "city_month_paired_qc.parquet"
@@ -879,7 +1133,52 @@ def build_gold(config_path: Path) -> Path:
         """)
         print(f"[OUTPUT] {paired_path}: paired monthly QC records.", flush=True)
 
-        output_paths = [paired_path]
+        pixel_classification_path = staging / "city_pixel_classification.parquet"
+        connection.execute(f"""
+            COPY (
+              SELECT city_id AS ID_UC_G0,
+                     pixel_id,
+                     water_fraction,
+                     initial_isa_fraction,
+                     urban_zone,
+                     water_eligible
+              FROM pixel_classification
+            ) TO {literal(pixel_classification_path.as_posix())}
+            (FORMAT PARQUET, COMPRESSION ZSTD)
+        """)
+
+        zone_month_path = staging / "city_month_zone_paired_qc.parquet"
+        connection.execute(f"""
+            COPY (
+              SELECT z.city_id AS ID_UC_G0,
+                     c.centroid_lat,
+                     c.koppen_geiger_code,
+                     c.koppen_geiger_class,
+                     c.koppen_geiger_macro_group,
+                     LEFT(c.koppen_geiger_class, 1) AS climate_major,
+                     z.urban_zone,
+                     z.year, z.month, z.slot,
+                     z.urban_valid_n, z.urban_eligible_n, z.urban_coverage,
+                     z.rural_valid_n,
+                     z.urban_qc_pass, z.rural_qc_pass, z.paired_valid,
+                     z.urban_lst, z.rural_lst, z.suhi
+              FROM zone_paired_months z
+              JOIN climate_info c USING (city_id)
+            ) TO {literal(zone_month_path.as_posix())}
+            (FORMAT PARQUET, COMPRESSION ZSTD)
+        """)
+        zone_count = connection.execute(
+            "SELECT COUNT(*) FROM read_parquet(?)",
+            [zone_month_path.as_posix()],
+        ).fetchone()[0]
+        if zone_count != connection.execute(
+            "SELECT COUNT(*) FROM zone_paired_months"
+        ).fetchone()[0]:
+            raise ValueError(
+                "The city-month zone output lost rows while attaching climate metadata."
+            )
+
+        output_paths = [paired_path, pixel_classification_path, zone_month_path]
         for start, end in config["windows"]:
             create_trends(connection, config, start, end)
             output_paths.extend(
@@ -898,6 +1197,11 @@ def build_gold(config_path: Path) -> Path:
             },
             "trend_windows": config["windows"],
             "qc": config["qc"],
+            "urban_classification": {
+                **config["urban_classification"],
+                "water_fraction_max": config["qc"]["max_water_fraction"],
+                "overall_label": "overall",
+            },
             "inputs": {
                 "configured_paths": config["_configured_paths"],
                 "config_sha256": sha256_file(config_file),

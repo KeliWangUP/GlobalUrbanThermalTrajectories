@@ -1,12 +1,12 @@
 {
   "paths": {
-    "pixel_lst": "../../data/processed/silver_1700/pixel_lst/city_id=*/data.parquet",
-    "pixel_development": "../../data/processed/silver_1700/pixel_development/data.parquet",
-    "rural_lst": "../../data/processed/silver_1700/rural_lst/rural_*.parquet",
+    "pixel_lst": "../../data/processed/silver/pixel_lst/city_id=*/data.parquet",
+    "pixel_development": "../../data/processed/silver/pixel_development/data.parquet",
+    "rural_lst": "../../data/processed/silver/rural_lst/rural_*.parquet",
     "city_metadata": "../../data/processed/city_metadata.parquet",
     "priority_city_ids": "../../data/priority_city_ids_1700.json",
-    "silver_manifest": "../../data/processed/silver_1700/manifest.json",
-    "output_dir": "../../data/processed/gold/city_month_trends"
+    "silver_manifest": "../../data/processed/silver/manifest.json",
+    "output_dir": "../../data/processed/gold/city_month_trends_stable_development_2000_isa_0p7"
   },
   "study": {
     "start_year": 2000,
@@ -27,7 +27,8 @@
     "development": {
       "city": "ID_UC_G0",
       "pixel_id": "pixel_id",
-      "water_fraction": "water_fraction"
+      "water_fraction": "water_fraction",
+      "initial_isa_fraction": "isa_urban_fraction_2000"
     },
     "rural": {
       "city": "ID_UC_G0",
@@ -104,6 +105,12 @@
     "min_valid_year_fraction": 0.75,
     "min_each_half_fraction": 0.5,
     "max_missing_span_years": 3
+  },
+  "urban_classification": {
+    "baseline_year": 2000,
+    "stable_isa_threshold": 0.7,
+    "stable_label": "stable",
+    "development_label": "development"
   },
   "windows": [
     [2003, 2019],
