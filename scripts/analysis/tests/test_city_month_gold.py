@@ -112,11 +112,14 @@ class CityMonthGoldTests(unittest.TestCase):
                 connection,
                 """
                 SELECT * FROM (VALUES
-                    (10::INTEGER, 30.0::DOUBLE, 1::INTEGER, 'Af', 'Tropical', 'Region A'),
-                    (20::INTEGER, -30.0::DOUBLE, 4::INTEGER, 'BWh', 'Arid', 'Region B')
+                    (10::INTEGER, -70.0::DOUBLE, 30.0::DOUBLE, 120.0::DOUBLE,
+                     'Country A', 1::INTEGER, 'Af', 'Tropical', 'Region A'),
+                    (20::INTEGER, 20.0::DOUBLE, -30.0::DOUBLE, 80.0::DOUBLE,
+                     'Country B', 4::INTEGER, 'BWh', 'Arid', 'Region B')
                 ) AS metadata(
-                    ID_UC_G0, centroid_lat, koppen_geiger_code,
-                    koppen_geiger_class, koppen_geiger_macro_group, GC_DEV_USR
+                    ID_UC_G0, centroid_lon, centroid_lat, city_area_km2,
+                    country, koppen_geiger_code, koppen_geiger_class,
+                    koppen_geiger_macro_group, GC_DEV_USR
                 )
                 """,
                 metadata,
@@ -238,8 +241,20 @@ class CityMonthGoldTests(unittest.TestCase):
                                 output_dir / "city_pixel_classification.parquet"
                             ),
                             "gold_manifest": str(output_dir / "manifest.json"),
+                            "city_metadata": str(metadata),
                             "output_csv": str(count_csv),
-                        }
+                        },
+                        "columns": {
+                            "city_id": "ID_UC_G0",
+                            "longitude": "centroid_lon",
+                            "latitude": "centroid_lat",
+                            "city_area": "city_area_km2",
+                            "country": "country",
+                            "ghsl_region": "GC_DEV_USR",
+                            "koppen_code": "koppen_geiger_code",
+                            "koppen_class": "koppen_geiger_class",
+                            "koppen_macro_group": "koppen_geiger_macro_group",
+                        },
                     }
                 ),
                 encoding="utf-8",

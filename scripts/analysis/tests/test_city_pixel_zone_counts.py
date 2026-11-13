@@ -50,6 +50,25 @@ class CityPixelZoneCountTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            metadata = root / "city_metadata.parquet"
+            connection = duckdb.connect(":memory:")
+            connection.execute(
+                f"""
+                COPY (
+                    SELECT * FROM (VALUES
+                        (1, -70.0, 40.0, 120.5, 'Country A', 'Region A',
+                         14, 'Cfa', 'Temperate'),
+                        (2, 20.0, -30.0, 80.0, 'Country B', 'Region B',
+                         4, 'BWh', 'Arid')
+                    ) AS cities(
+                        ID_UC_G0, centroid_lon, centroid_lat, city_area_km2,
+                        country, GC_DEV_USR, koppen_geiger_code,
+                        koppen_geiger_class, koppen_geiger_macro_group
+                    )
+                ) TO '{metadata.as_posix()}' (FORMAT PARQUET)
+                """
+            )
+            connection.close()
             output_csv = root / "counts.csv"
             config = root / "config.json"
             config.write_text(
@@ -58,8 +77,20 @@ class CityPixelZoneCountTests(unittest.TestCase):
                         "paths": {
                             "pixel_classification": str(source),
                             "gold_manifest": str(gold_manifest),
+                            "city_metadata": str(metadata),
                             "output_csv": str(output_csv),
-                        }
+                        },
+                        "columns": {
+                            "city_id": "ID_UC_G0",
+                            "longitude": "centroid_lon",
+                            "latitude": "centroid_lat",
+                            "city_area": "city_area_km2",
+                            "country": "country",
+                            "ghsl_region": "GC_DEV_USR",
+                            "koppen_code": "koppen_geiger_code",
+                            "koppen_class": "koppen_geiger_class",
+                            "koppen_macro_group": "koppen_geiger_macro_group",
+                        },
                     }
                 ),
                 encoding="utf-8",
@@ -83,6 +114,13 @@ class CityPixelZoneCountTests(unittest.TestCase):
             self.assertEqual(rows[2]["development_pixel_count"], "0")
             self.assertEqual(rows[2]["stable_water_excluded_pixel_count"], "1")
             self.assertEqual(rows[2]["stable_isa_threshold"], "0.7")
+            self.assertEqual(rows[1]["country"], "Country A")
+            self.assertEqual(rows[1]["GC_DEV_USR"], "Region A")
+            self.assertEqual(rows[1]["koppen_geiger_class"], "Cfa")
+            self.assertEqual(rows[1]["climate_major"], "C")
+            self.assertEqual(rows[1]["hemisphere"], "north")
+            self.assertEqual(rows[1]["centroid_lon"], "-70.0")
+            self.assertEqual(rows[1]["city_area_km2"], "120.5")
 
 
 if __name__ == "__main__":

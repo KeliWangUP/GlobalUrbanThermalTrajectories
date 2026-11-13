@@ -2,6 +2,18 @@
   "paths": {
     "pixel_classification": "../../data/processed/gold/city_month_trends_stable_development_2000_isa_0p7/city_pixel_classification.parquet",
     "gold_manifest": "../../data/processed/gold/city_month_trends_stable_development_2000_isa_0p7/manifest.json",
+    "city_metadata": "../../data/processed/city_metadata.parquet",
     "output_csv": "../../data/processed/result/city_pixel_zone_counts_2000_isa_0p7.csv"
+  },
+  "columns": {
+    "city_id": "ID_UC_G0",
+    "longitude": "centroid_lon",
+    "latitude": "centroid_lat",
+    "city_area": "city_area_km2",
+    "country": "country",
+    "ghsl_region": "GC_DEV_USR",
+    "koppen_code": "koppen_geiger_code",
+    "koppen_class": "koppen_geiger_class",
+    "koppen_macro_group": "koppen_geiger_macro_group"
   }
 }

@@ -147,6 +147,8 @@ python scripts/analysis/diagnose_city_pixel_zone_counts.py
 selects the Gold pixel-classification table, matching manifest, and CSV output.
 The CSV reports total and water-eligible pixel counts separately for each
 class, plus the total eligible count and water-excluded counts. This check
+also joins the city metadata to include Köppen climate code/class/macro group,
+longitude, latitude, hemisphere, area, country, and GHSL `GC_DEV_USR`. It
 reads the existing Gold classification and does not rebuild Silver or Gold.
 
 ### Seasonal trends and γ by urban pixel zone
