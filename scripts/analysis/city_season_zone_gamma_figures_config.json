@@ -7,6 +7,7 @@
   "subclimate_classes": [],
   "hemisphere": "all",
   "synchrony_color_by": "ghsl_region",
+  "min_stable_pixel_count_exclusive": 10,
   "dpi": 240,
   "decomposition_tolerance": 1e-8
 }

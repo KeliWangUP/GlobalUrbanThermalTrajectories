@@ -44,6 +44,7 @@ REQUIRED_COLUMNS = {
     "gamma_urban",
     "gamma_rural",
     "gamma_suhi",
+    "urban_eligible_pixel_count",
 }
 
 
@@ -106,6 +107,27 @@ def _validate_zone_gammas(
                 f"Seasonal zone gamma table has non-finite {metric} values."
             )
         frame[metric] = values
+    pixel_counts = pd.to_numeric(
+        frame["urban_eligible_pixel_count"], errors="coerce"
+    )
+    if (
+        pixel_counts.isna().any()
+        or not np.isfinite(pixel_counts.to_numpy()).all()
+        or (pixel_counts < 1).any()
+        or (pixel_counts % 1 != 0).any()
+    ):
+        raise ValueError(
+            "Seasonal zone gamma table contains invalid eligible pixel counts."
+        )
+    frame["urban_eligible_pixel_count"] = pixel_counts.astype("int64")
+    stable_counts = frame.loc[
+        frame["urban_zone"].eq("stable"),
+        ["ID_UC_G0", "urban_eligible_pixel_count"],
+    ]
+    if stable_counts.groupby("ID_UC_G0")["urban_eligible_pixel_count"].nunique().gt(1).any():
+        raise ValueError(
+            "Stable eligible pixel counts vary across rows for the same city."
+        )
     errors = frame["gamma_suhi"] - (
         frame["gamma_urban"] - frame["gamma_rural"]
     )
@@ -117,6 +139,69 @@ def _validate_zone_gammas(
             f"{max_error:.12g}, tolerance={tolerance:.12g}."
         )
     return max_error, missing_region_count
+
+
+def _filter_by_stable_pixel_count(
+    frame: pd.DataFrame,
+    minimum_exclusive: int,
+) -> tuple[pd.DataFrame, dict[str, int]]:
+    cities_before = int(frame["ID_UC_G0"].nunique())
+    stable_counts = frame.loc[
+        frame["urban_zone"].eq("stable"),
+        ["ID_UC_G0", "urban_eligible_pixel_count"],
+    ].drop_duplicates("ID_UC_G0")
+    eligible_cities = stable_counts.loc[
+        stable_counts["urban_eligible_pixel_count"] > minimum_exclusive,
+        "ID_UC_G0",
+    ]
+    selected = frame.loc[frame["ID_UC_G0"].isin(eligible_cities)].copy()
+    cities_after = int(selected["ID_UC_G0"].nunique())
+    return selected, {
+        "cities_before": cities_before,
+        "cities_after": cities_after,
+        "cities_excluded": cities_before - cities_after,
+    }
+
+
+def _retain_common_zone_cities(
+    frame: pd.DataFrame,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    zone_counts = frame.groupby(
+        ["ID_UC_G0", "slot"], as_index=False
+    )["urban_zone"].nunique()
+    complete_keys = zone_counts.loc[
+        zone_counts["urban_zone"].eq(len(URBAN_ZONES)),
+        ["ID_UC_G0", "slot"],
+    ]
+    selected = frame.merge(
+        complete_keys,
+        on=["ID_UC_G0", "slot"],
+        how="inner",
+        validate="many_to_one",
+    )
+    by_slot = {
+        slot: int(
+            selected.loc[selected["slot"].eq(slot), "ID_UC_G0"].nunique()
+        )
+        for slot, _, _, _ in SLOTS
+    }
+    by_climate_and_slot = {
+        climate: {
+            slot: int(
+                selected.loc[
+                    selected["climate"].eq(climate)
+                    & selected["slot"].eq(slot),
+                    "ID_UC_G0",
+                ].nunique()
+            )
+            for slot, _, _, _ in SLOTS
+        }
+        for climate in sorted(selected["climate"].dropna().unique())
+    }
+    return selected, {
+        "by_slot": by_slot,
+        "by_climate_and_slot": by_climate_and_slot,
+    }
 
 
 def summarize_zone_gammas(
@@ -351,6 +436,12 @@ def build_city_season_zone_gamma_figures(config_path: Path) -> Path:
             "Config 'synchrony_color_by' must be 'ghsl_region' or 'subclimate'."
         )
     config["synchrony_color_by"] = color_by
+    min_stable_pixels = config.get("min_stable_pixel_count_exclusive", 0)
+    if type(min_stable_pixels) is not int or min_stable_pixels < 0:
+        raise ValueError(
+            "Config 'min_stable_pixel_count_exclusive' must be a "
+            "non-negative integer."
+        )
     source = Path(config["paths"]["gamma_file"])
     if not source.is_file():
         raise FileNotFoundError(f"City seasonal zone gamma table not found: {source}")
@@ -378,8 +469,15 @@ def build_city_season_zone_gamma_figures(config_path: Path) -> Path:
             config["major_climate_group"],
             config["subclimate_classes"],
         )
+        selected, stable_pixel_filter = _filter_by_stable_pixel_count(
+            selected, min_stable_pixels
+        )
+        selected, common_city_sample = _retain_common_zone_cities(selected)
         if selected.empty:
-            raise ValueError("No city/zone gamma rows remain for plotting.")
+            raise ValueError(
+                "No city/zone gamma rows remain after climate, hemisphere, "
+                "stable pixel count, and common-zone sample filters."
+            )
         if set(selected["urban_zone"].unique()) != set(URBAN_ZONES):
             raise ValueError(
                 "The climate/hemisphere selection must contain all three "
@@ -425,6 +523,22 @@ def build_city_season_zone_gamma_figures(config_path: Path) -> Path:
             "hemisphere_filter": hemisphere_filter,
             "climate_group_counts": climate_counts,
             "urban_zones": list(URBAN_ZONES),
+            "stable_pixel_count_filter": {
+                "source_zone": "stable",
+                "pixel_metric": "water-eligible urban_eligible_pixel_count",
+                "operator": ">",
+                "threshold": min_stable_pixels,
+                **stable_pixel_filter,
+            },
+            "common_zone_city_sample": {
+                "require_all_zones": list(URBAN_ZONES),
+                "selection_key": "city and sensor slot",
+                "policy": (
+                    "A city/slot is retained only when gamma rows exist for "
+                    "stable, development, and overall zones."
+                ),
+                **common_city_sample,
+            },
             "synchrony_color_by": (
                 "GC_DEV_USR"
                 if config["synchrony_color_by"] == "ghsl_region"

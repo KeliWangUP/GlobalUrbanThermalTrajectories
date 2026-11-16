@@ -22,6 +22,7 @@ REQUIRED_COLUMNS = {
     "climate_major",
     "GC_DEV_USR",
     "urban_zone",
+    "urban_eligible_n",
     "year",
     "month",
     "slot",
@@ -216,6 +217,9 @@ def _validate_source(
         FROM read_parquet(?)
         WHERE ID_UC_G0 IS NULL
            OR urban_zone IS NULL
+           OR urban_eligible_n IS NULL
+           OR TRY_CAST(urban_eligible_n AS BIGINT) IS NULL
+           OR TRY_CAST(urban_eligible_n AS BIGINT) < 1
            OR year IS NULL OR year < 1
            OR month IS NULL OR month NOT BETWEEN 1 AND 12
            OR slot IS NULL OR slot NOT IN
@@ -270,6 +274,24 @@ def _validate_source(
             "Monthly zone Gold table has inconsistent city climate metadata."
         )
 
+    inconsistent_pixel_counts = connection.execute(
+        """
+        SELECT COUNT(*)
+        FROM (
+            SELECT ID_UC_G0, urban_zone
+            FROM read_parquet(?)
+            GROUP BY ID_UC_G0, urban_zone
+            HAVING COUNT(DISTINCT urban_eligible_n) > 1
+        )
+        """,
+        [source.as_posix()],
+    ).fetchone()[0]
+    if inconsistent_pixel_counts:
+        raise ValueError(
+            "Monthly zone Gold table has inconsistent eligible pixel counts "
+            "within a city/zone."
+        )
+
     qc_type = next(row[1] for row in description if row[0] == "paired_valid")
     if qc_type != "BOOLEAN":
         raise TypeError("paired_valid must have BOOLEAN type.")
@@ -287,6 +309,8 @@ def _season_means_query(source: Path, start: int, end: int, min_months: int) -> 
                 CAST(climate_major AS VARCHAR) AS climate_major,
                 CAST(GC_DEV_USR AS VARCHAR) AS GC_DEV_USR,
                 CAST(urban_zone AS VARCHAR) AS urban_zone,
+                CAST(urban_eligible_n AS BIGINT)
+                    AS urban_eligible_pixel_count,
                 CAST(slot AS VARCHAR) AS slot,
                 CAST(year AS INTEGER)
                     + CASE WHEN month = 12 THEN 1 ELSE 0 END AS season_year,
@@ -315,6 +339,8 @@ def _season_means_query(source: Path, start: int, end: int, min_months: int) -> 
                 slot,
                 season_year,
                 season,
+                MAX(urban_eligible_pixel_count)
+                    AS urban_eligible_pixel_count,
                 COUNT(*) FILTER (WHERE paired_valid) AS n_valid_months,
                 AVG(urban_lst) FILTER (WHERE paired_valid) AS urban_mean,
                 AVG(rural_lst) FILTER (WHERE paired_valid) AS rural_mean,
@@ -358,6 +384,8 @@ def _season_trends_query(
                 urban_zone,
                 season,
                 slot,
+                MAX(urban_eligible_pixel_count)
+                    AS urban_eligible_pixel_count,
                 COUNT(*) AS n_valid_years,
                 MIN(season_year) AS first_year,
                 MAX(season_year) AS last_year,
@@ -407,6 +435,7 @@ def _season_trends_query(
                 ELSE 'equator'
             END AS hemisphere,
             urban_zone,
+            urban_eligible_pixel_count,
             season,
             slot,
             n_valid_years,
@@ -461,6 +490,7 @@ def _gamma_query(source: Path) -> str:
                 summer.centroid_lat,
                 summer.hemisphere,
                 summer.urban_zone,
+                summer.urban_eligible_pixel_count,
                 summer.slot,
                 CASE WHEN summer.hemisphere = 'north'
                      THEN 'JJA' ELSE 'DJF' END AS summer_season,
@@ -494,6 +524,7 @@ def _gamma_query(source: Path) -> str:
             centroid_lat,
             hemisphere,
             urban_zone,
+            urban_eligible_pixel_count,
             slot,
             summer_season,
             winter_season,

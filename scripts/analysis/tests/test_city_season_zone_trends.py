@@ -48,6 +48,16 @@ def _write_source(path: Path) -> None:
                 )
                 for urban_zone_index, urban_zone in enumerate(ZONES):
                     for slot_index, slot in enumerate(SLOTS):
+                        eligible_pixel_count = (
+                            (11, 7, 18)
+                            if city_id == 1
+                            else (10, 8, 18)
+                        )[urban_zone_index]
+                        paired_valid = not (
+                            city_id == 2
+                            and urban_zone == "development"
+                            and slot == "terra_day"
+                        )
                         urban = (
                             20.0
                             + urban_slopes[season] * (year - 2000)
@@ -69,10 +79,11 @@ def _write_source(path: Path) -> None:
                                 "C",
                                 "Region A" if city_id == 1 else "Region B",
                                 urban_zone,
+                                eligible_pixel_count,
                                 year,
                                 month,
                                 slot,
-                                True,
+                                paired_valid,
                                 urban,
                                 rural,
                                 urban - rural,
@@ -95,19 +106,20 @@ def _write_source(path: Path) -> None:
                         "'" + row[5] + "'",
                         str(row[6]),
                         str(row[7]),
-                        "'" + row[8] + "'",
-                        "TRUE",
-                        repr(row[10]),
+                        str(row[8]),
+                        "'" + row[9] + "'",
+                        "TRUE" if row[10] else "FALSE",
                         repr(row[11]),
                         repr(row[12]),
+                        repr(row[13]),
                     )
                 ) + ")"
                 for row in rows
             )
         + """) AS source(
             ID_UC_G0, centroid_lat, koppen_geiger_class, climate_major,
-            GC_DEV_USR, urban_zone, year, month, slot, paired_valid, urban_lst,
-            rural_lst, suhi
+            GC_DEV_USR, urban_zone, urban_eligible_n, year, month, slot,
+            paired_valid, urban_lst, rural_lst, suhi
         )
         """
     )
@@ -196,7 +208,7 @@ class CitySeasonZoneTrendTests(unittest.TestCase):
             north = connection.execute(
                 """
                 SELECT summer_season, winter_season, gamma_urban,
-                       gamma_rural, gamma_suhi
+                       gamma_rural, gamma_suhi, urban_eligible_pixel_count
                 FROM read_parquet(?)
                 WHERE ID_UC_G0 = 1 AND urban_zone = 'stable'
                   AND slot = 'terra_day'
@@ -206,7 +218,7 @@ class CitySeasonZoneTrendTests(unittest.TestCase):
             south = connection.execute(
                 """
                 SELECT summer_season, winter_season, gamma_urban,
-                       gamma_rural, gamma_suhi
+                       gamma_rural, gamma_suhi, urban_eligible_pixel_count
                 FROM read_parquet(?)
                 WHERE ID_UC_G0 = 2 AND urban_zone = 'stable'
                   AND slot = 'terra_day'
@@ -215,17 +227,21 @@ class CitySeasonZoneTrendTests(unittest.TestCase):
             ).fetchone()
             connection.close()
 
-            self.assertEqual(trend_count, 2 * len(ZONES) * 4 * len(SLOTS))
-            self.assertEqual(gamma_count, 2 * len(ZONES) * len(SLOTS))
+            self.assertEqual(
+                trend_count, 2 * len(ZONES) * 4 * len(SLOTS) - 4
+            )
+            self.assertEqual(gamma_count, 2 * len(ZONES) * len(SLOTS) - 1)
             self.assertEqual(region_names, {"Region A", "Region B"})
             self.assertEqual(north[:2], ("JJA", "DJF"))
             self.assertAlmostEqual(north[2], 1.5)
             self.assertAlmostEqual(north[3], -0.5)
             self.assertAlmostEqual(north[4], 2.0)
+            self.assertEqual(north[5], 11)
             self.assertEqual(south[:2], ("DJF", "JJA"))
             self.assertAlmostEqual(south[2], -1.5)
             self.assertAlmostEqual(south[3], 0.5)
             self.assertAlmostEqual(south[4], -2.0)
+            self.assertEqual(south[5], 10)
             self.assertTrue((output_dir / "manifest.json").is_file())
 
             figure_dir = root / "seasonal_zone_figures"
@@ -238,9 +254,10 @@ class CitySeasonZoneTrendTests(unittest.TestCase):
                             "output_dir": str(figure_dir),
                         },
                         "major_climate_group": "C",
-                        "subclimate_classes": ["Cfa"],
+                        "subclimate_classes": [],
                         "hemisphere": "all",
                         "synchrony_color_by": "ghsl_region",
+                        "min_stable_pixel_count_exclusive": 9,
                         "dpi": 72,
                         "decomposition_tolerance": 1e-8,
                     }
@@ -263,13 +280,40 @@ class CitySeasonZoneTrendTests(unittest.TestCase):
             self.assertEqual(
                 figure_manifest["synchrony_color_by"], "GC_DEV_USR"
             )
+            self.assertEqual(
+                figure_manifest["stable_pixel_count_filter"]["operator"], ">"
+            )
+            self.assertEqual(
+                figure_manifest["stable_pixel_count_filter"]["cities_before"], 2
+            )
+            self.assertEqual(
+                figure_manifest["stable_pixel_count_filter"]["cities_after"], 2
+            )
+            common_by_slot = figure_manifest["common_zone_city_sample"]["by_slot"]
+            self.assertEqual(common_by_slot["terra_day"], 1)
+            self.assertEqual(common_by_slot["terra_night"], 2)
+            self.assertEqual(common_by_slot["aqua_day"], 2)
+            self.assertEqual(common_by_slot["aqua_night"], 2)
             connection = duckdb.connect(":memory:")
             summary_rows = connection.execute(
                 "SELECT COUNT(*) FROM read_csv_auto(?)",
                 [(figure_dir / "city_season_zone_gamma_summary.csv").as_posix()],
             ).fetchone()[0]
+            mismatched_zone_counts = connection.execute(
+                """
+                SELECT COUNT(*)
+                FROM (
+                    SELECT climate, slot
+                    FROM read_csv_auto(?)
+                    GROUP BY climate, slot
+                    HAVING MIN(n_cities) != MAX(n_cities)
+                )
+                """,
+                [(figure_dir / "city_season_zone_gamma_summary.csv").as_posix()],
+            ).fetchone()[0]
             connection.close()
-            self.assertEqual(summary_rows, len(ZONES) * len(SLOTS))
+            self.assertEqual(summary_rows, 2 * len(ZONES) * len(SLOTS))
+            self.assertEqual(mismatched_zone_counts, 0)
 
 
 if __name__ == "__main__":

@@ -179,8 +179,14 @@ python scripts/analysis/plot_city_season_zone_gamma.py
 controls the Köppen major group, optional subclasses, hemisphere (`all`,
 `north`, or `south`), and output directory. `synchrony_color_by` controls the
 scatter colors; it defaults to `ghsl_region` (`GC_DEV_USR`) and can be set to
-`subclimate`. The figures compare zone-level γSUHI distributions and plot γR
-versus γU with y=x as the synchrony reference.
+`subclimate`. `min_stable_pixel_count_exclusive` filters cities by the number
+of water-eligible stable pixels; the default `10` means only cities with
+strictly more than 10 stable pixels are included. The same city filter applies
+to stable, development, and overall results. Within each sensor-slot column,
+the figures use the complete-case intersection of cities with γ values for
+all three zones, so stable/development/overall panels compare the same cities
+and have matching sample counts. The figures compare zone-level γSUHI
+distributions and plot γR versus γU with y=x as the synchrony reference.
 
 ### Gold completeness and trend diagnostics
 
