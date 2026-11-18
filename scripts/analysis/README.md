@@ -3,6 +3,23 @@
 For the complete source-to-analysis workflow and future analysis roadmap, see
 [`../../DATA_PROCESSING_WORKFLOW.md`](../../DATA_PROCESSING_WORKFLOW.md).
 
+## Figure 2: seasonal city trends
+
+Run `python scripts/analysis/plot_figure2_seasonal_trends.py` to generate
+Terra and Aqua 2 × 2 PNG/PDF figures, paired day-minus-night contrasts, and
+full-sample reversal summaries in `results/figures/figure2_seasonal_trends/`.
+The script verifies the Gold inputs and their source seasonal panel against
+their manifests. Figure 2 uses cities with at least 15 shared QC-valid season
+years across warm/cold and day/night, and refits OLS for all eight trends on
+those years. The full-sample CSV instead uses each slot's own warm/cold
+shared years, at least 15, with hemisphere-specific seasons. Its reversal
+share is the fraction with d_warm > 0 and d_cold < 0. Supplemental heatmaps
+show all non-empty groups, consistent with the existing Figure 1's lack of a
+minimum city-count filter; a one-city bootstrap interval is degenerate and
+does not quantify population uncertainty. Trends are in °C per decade and
+95% percentile bootstrap intervals resample cities jointly. Use `--trend-file`,
+`--contrast-file`, `--seasonal-file`, or `--output-dir` to change the paths.
+
 ## Pixel-level Silver dataset
 
 The city-partitioned pixel workflow is configured separately in

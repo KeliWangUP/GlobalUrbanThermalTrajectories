@@ -1,14 +1,14 @@
 {
   "paths": {
     "gamma_file": "../../data/processed/gold/city_seasonal_trend_contrasts_2003_2019_with_ghsl/city_seasonal_trend_contrasts.parquet",
-    "output_dir": "../../data/processed/result/city_seasonal_gamma_building_growth_C_all"
+    "output_dir": "../../results/figures/city_seasonal_gamma_building_growth_Bwk_north"
   },
-  "major_climate_group": "C",
-  "subclimate_classes": [],
-  "hemisphere": "all",
+  "major_climate_group": "B",
+  "subclimate_classes": ["Bwk"],
+  "hemisphere": "north",
   "building_growth_axis_limits": {
     "built_surface": [0.0, 0.5],
-    "built_volume": null
+    "built_volume": [0.0, 5]
   },
   "dpi": 240,
   "decomposition_tolerance": 1e-8
