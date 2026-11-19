@@ -1,0 +1,12 @@
+{
+  "paths": {
+    "contrast_file": "../../data/processed/gold/city_season_era5_paired_2003_2019/city_season_era5_contrasts.parquet",
+    "trend_manifest": "../../data/processed/gold/city_season_era5_paired_2003_2019/manifest.json",
+    "seasonal_source": "../../data/processed/era5_aligned/suhi_seasonal_era5.parquet",
+    "output_dir": "../../results/figures/era5_modis_seasonal_agreement_2003_2019"
+  },
+  "reference_region": "Europe",
+  "comparison_region": "Eastern and South-Eastern Asia",
+  "dpi": 240,
+  "tolerance": 1e-8
+}

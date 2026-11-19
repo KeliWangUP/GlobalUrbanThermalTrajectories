@@ -3,6 +3,29 @@
 For the complete source-to-analysis workflow and future analysis roadmap, see
 [`../../DATA_PROCESSING_WORKFLOW.md`](../../DATA_PROCESSING_WORKFLOW.md).
 
+## ERA5 and MODIS seasonal trend agreement
+
+Run `python scripts/analysis/plot_era5_modis_seasonal_agreement.py` to compare
+the 2003–2019 common-year ERA5, urban LST and rural LST trends for northern
+Köppen C and Cfa cities. Inputs and the output directory are defined in
+[`era5_modis_agreement_figures_config.json`](./era5_modis_agreement_figures_config.json);
+use `--config` to select another configuration. The output directory must not
+already exist. Regions and scatter colors use `GC_DEV_USR` directly from the
+contrast table; no boundary shapefile is needed. The process checks for missing
+or inconsistent city regions, verifies the input checksums, unique city/slot keys,
+common years, all six refitted trends and gamma identities before
+publishing PNG, editable-text SVG, city-level CSVs, regional summary and
+Europe-minus-East/South-East-Asia comparison CSVs, and a text report.
+
+All three series within a city/slot use the same warm/cold **season-years**,
+with at least 15 paired years. Seasonal ERA5 and MODIS means were independently
+aggregated: their constituent valid months need not match. Each overpass uses
+its own cities and years; the figures do not directly quantify day/night
+differences. Gamma medians and warm/cold beta medians are descriptive and do
+not generally decompose algebraically; the report also gives mean differences,
+which do. Pearson correlations describe association rather than numerical
+agreement or causality. Trends are in °C per decade.
+
 ## Figure 2: seasonal city trends
 
 Run `python scripts/analysis/plot_figure2_seasonal_trends.py` to generate
