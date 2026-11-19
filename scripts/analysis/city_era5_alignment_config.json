@@ -1,0 +1,12 @@
+{
+  "paths": {
+    "era5_raw_dir": "../../data/raw/city_era5",
+    "monthly_suhi_file": "../../data/processed/suhi_monthly.parquet",
+    "seasonal_suhi_file": "../../data/processed/suhi_seasonal.parquet",
+    "annual_suhi_file": "../../data/processed/suhi_annual.parquet",
+    "output_dir": "../../data/processed/era5_aligned"
+  },
+  "require_complete_city_months": true,
+  "minimum_valid_months_per_season": 2,
+  "minimum_valid_months_per_year": 9
+}

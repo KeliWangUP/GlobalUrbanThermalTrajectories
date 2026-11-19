@@ -1,0 +1,8 @@
+{
+  "paths": {
+    "seasonal_suhi_file": "../../data/processed/era5_aligned/suhi_seasonal_era5.parquet",
+    "modis_trend_config": "city_season_slot_trends_config.json",
+    "output_dir": "../../data/processed/gold/city_season_era5_paired_2003_2019"
+  },
+  "decomposition_tolerance": 1e-8
+}

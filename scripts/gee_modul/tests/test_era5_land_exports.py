@@ -1,3 +1,4 @@
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -17,6 +18,17 @@ from src.era5_land_exports import (
 
 
 class Era5LandExportTests(unittest.TestCase):
+    def test_project_config_has_export_settings(self):
+        with (MODULE_DIR / "config.json").open(encoding="utf-8") as file:
+            config = json.load(file)
+        self.assertTrue({
+            "collection", "temperature_band", "kelvin_to_celsius_offset"
+        } <= config["era5_land"].keys())
+        self.assertTrue({
+            "mode", "sample_city_count", "sample_year", "dataset_name",
+            "folder", "max_error_m", "tile_scale"
+        } <= config["era5_land_export"].keys())
+
     def test_study_date_range_includes_final_configured_year(self):
         self.assertEqual(
             study_date_range({
@@ -107,6 +119,22 @@ class Era5LandExportTests(unittest.TestCase):
         )
         image.add.assert_called_with(-273.15)
         feature_collection.assert_called_once()
+
+        format_row = reduced.map.call_args_list[0].args[0]
+        source_row = MagicMock()
+        source_row.get.side_effect = {
+            "city_id": 1,
+            "mean": 24.85
+        }.get
+        with (
+            patch("src.era5_land_exports.ee.Feature", side_effect=[source_row, "formatted"]) as feature,
+            patch("src.era5_land_exports.ee.Dictionary", side_effect=lambda value: value)
+        ):
+            self.assertEqual(format_row("reduced-row"), "formatted")
+        self.assertEqual(
+            feature.call_args.args[1]["temperature_2m_c"],
+            24.85
+        )
 
 
 if __name__ == "__main__":

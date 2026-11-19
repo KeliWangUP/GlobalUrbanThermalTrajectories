@@ -113,7 +113,7 @@ def build_yearly_era5_rows(
             properties = ee.Dictionary({
                 "city_id": feature.get("city_id"),
                 "month": month_label,
-                "temperature_2m_c": feature.get("temperature_2m_c")
+                "temperature_2m_c": feature.get("mean")
             })
             return ee.Feature(None, properties)
 

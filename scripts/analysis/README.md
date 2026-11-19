@@ -362,6 +362,46 @@ seasonal trend are excluded and counted in the manifest. The output is one
 row per complete city/slot pair, with the selected seasons, each seasonal β,
 and each γ; no output directory is overwritten.
 
+### Paired MODIS and ERA5 seasonal trends
+
+After building the ERA5-aligned seasonal SUHI panel, run:
+
+```bash
+python scripts/analysis/build_city_season_era5_trends.py
+```
+
+`city_season_era5_trends_config.json` specifies the source and output
+directory, and points to `city_season_slot_trends_config.json` for the
+existing MODIS study years, minimum valid years, and beta scale. It does not
+modify the earlier trend and contrast products. An existing output directory
+is not overwritten.
+
+The seasonal output has one row per city, season and MODIS sensor/day-night
+slot. It fits MODIS urban, rural and SUHI plus ERA5 2 m background-temperature
+slopes on the same years: MODIS seasonal QC and all three MODIS means must
+pass, and ERA5's seasonal QC and temperature must be valid. It retains the
+actual `valid_years`, their count, and each slope and standard error. Despite
+being an all-day temperature, ERA5's slope may differ between slots because
+the MODIS-valid years may differ. The default 2003–2019 period requires at
+least 15 paired years; beta and standard error are in degrees Celsius per
+decade.
+
+The contrast output uses a separate fit: for each city and slot, intersect
+the paired warm- and cold-season years, require the same minimum number of
+common years, and refit every MODIS and ERA5 seasonal beta on that
+intersection. `gamma_era5` and the MODIS gammas are summer beta minus winter
+beta, with JJA/DJF for north and DJF/JJA for south; equatorial cities are
+excluded. `common_years` records the fitting years. The contrast betas may
+therefore differ from those in the seasonal table. The calculation checks
+the SUHI decomposition identity. Seasonal MODIS and ERA5 values were
+aggregated independently before this step: pairing is by season year, not
+necessarily by the same constituent months.
+
+The input's available city metadata are carried through. Missing optional
+metadata such as GHSL region are listed in the manifest rather than invented.
+The output directory contains `city_season_era5_trends.parquet`,
+`city_season_era5_contrasts.parquet` and `manifest.json`.
+
 ### Seasonal γ contrasts by Köppen subclass
 
 Visualize the city-level summer-minus-winter contrast table with:
@@ -587,6 +627,44 @@ Seasonal and annual values are null when their per-metric minimum number of
 QC-passing months is not reached.
 LST mean columns are already in degrees Celsius in the GEE exports, so no
 additional unit conversion is applied here.
+
+## ERA5-Land background air temperature alignment
+
+After downloading the annual ERA5-Land city-month CSV exports, run:
+
+```bash
+python scripts/analysis/align_city_era5.py
+```
+
+Paths and independent ERA5 seasonal/annual valid-month thresholds are set in
+`city_era5_alignment_config.json`. The script validates every CSV header,
+city/month key, temperature and duplicate key, and checks SUHI keys before
+joining. By default, `require_complete_city_months` also requires an ERA5
+record for every SUHI city-month before writing; records with masked ERA5
+temperatures are allowed. Add missing annual CSVs to the configured raw
+directory before running. For an explicitly partial exploratory build only,
+set `require_complete_city_months` to `false`; missing records remain null.
+The script preserves all SUHI rows and columns, and writes separate
+`suhi_monthly_era5.parquet`, `suhi_seasonal_era5.parquet` and
+`suhi_annual_era5.parquet` files, plus `era5_alignment_report.json`, under
+`data/processed/era5_aligned`. Existing files in this output directory are
+replaced on a successful rerun; the original SUHI inputs are not modified.
+
+The added `era5_temperature_2m_c` is the all-day ERA5-Land 2 m background
+air temperature in Celsius, not an urban or rural LST or an SUHI value.
+Monthly joins use city and calendar month. `era5_record_present` separates
+an absent CSV row from an existing row with a masked temperature.
+Seasonal and annual values use equal weights for available valid ERA5
+calendar months, independently of MODIS slot QC. Seasons are DJF/MAM/JJA/SON
+and December belongs to the following DJF year. The default thresholds are
+at least two valid months per season and nine per year; insufficient
+periods remain null. `era5_n_available_months` counts input rows, including
+masked temperatures; `era5_n_valid_months` counts non-null temperatures, and
+`era5_qc_pass` indicates whether the configured threshold is met.
+Years absent from the ERA5 inputs remain null and have zero available months;
+an incomplete boundary DJF may still pass if it has enough valid months.
+The report records actual source coverage, unmatched city-months, counts,
+aggregation settings and all output column names.
 
 The first EDA in `03_eda.py` plots daytime SUHI against nighttime SUHI for
 Terra and Aqua in separate 12-month panel figures. Each point is one city;

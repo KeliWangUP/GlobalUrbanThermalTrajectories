@@ -9,6 +9,22 @@
     "end_year": 2024
   },
 
+  "era5_land": {
+    "collection": "ECMWF/ERA5_LAND/MONTHLY_AGGR",
+    "temperature_band": "temperature_2m",
+    "kelvin_to_celsius_offset": -273.15
+  },
+
+  "era5_land_export": {
+    "mode": "sample",
+    "sample_city_count": 3,
+    "sample_year": 2000,
+    "dataset_name": "era5_land_city_monthly_temperature_2m",
+    "folder": "GlobalUrbanThermalTrajectories",
+    "max_error_m": 100,
+    "tile_scale": 4
+  },
+
   "sample_points": {
     "selection_rule": "center_in_city",
     "include_lonlat": true,
